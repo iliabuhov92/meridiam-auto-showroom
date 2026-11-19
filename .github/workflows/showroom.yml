@@ -1,0 +1,62 @@
+name: Verify and publish showroom
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'index.html'
+      - 'showroom.js'
+      - 'showroom.test.mjs'
+      - 'prepare-model.mjs'
+      - 'vite.config.js'
+      - 'package*.json'
+      - 'bmw_m3_g80.glb.part*'
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Restore the BMW asset from this repository's source release
+        if: ${{ hashFiles('bmw_m3_g80.glb.part0') == '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download v0.1.0-source --pattern MERIDIAM_AUTO_SHOWROOM_source.zip --dir "$RUNNER_TEMP"
+          unzip -j "$RUNNER_TEMP/MERIDIAM_AUTO_SHOWROOM_source.zip" 'bmw_m3_g80.glb.part?' -d .
+      - run: npm ci
+      - run: npm run build
+      - run: npx playwright install --with-deps chromium --only-shell
+      - run: npm test
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: showroom-browser-qa
+          path: test-results/
+      - uses: actions/upload-pages-artifact@v3
+        if: github.ref == 'refs/heads/main'
+        with:
+          path: dist/
+
+  pages:
+    if: github.ref == 'refs/heads/main'
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: deploy
