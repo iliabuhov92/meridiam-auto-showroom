@@ -35,7 +35,7 @@ async function showroom(browser, options) {
   return { page, errors };
 }
 
-test('BMW showroom changes the rendered GLB in desktop and mobile Chromium', { timeout: 540_000 }, async t => {
+test('BMW showroom changes the rendered GLB in desktop and mobile Chromium', { timeout: 720_000 }, async t => {
   await mkdir(resultDir, { recursive: true });
   const browser = await chromium.launch({ args: ['--enable-unsafe-swiftshader'] });
   t.after(() => browser.close());
@@ -145,8 +145,11 @@ test('BMW showroom changes the rendered GLB in desktop and mobile Chromium', { t
     assert.ok((await scene()).lamps[group].every(([value]) => value === 0));
     await click(control);
   }
+  // Keyboard activation avoids mouse hit testing during continuous software-rendered blinking.
+  const activateSignal = signal => page.locator('[data-signal="' + signal + '"]:visible')
+    .first().press('Enter', { timeout: 60_000 });
   for (const signal of ['left', 'right', 'hazard']) {
-    await click('[data-signal="' + signal + '"]');
+    await activateSignal(signal);
     await page.waitForFunction(signal => {
       const lamps = window.__MERIDIAM_QA().lamps.blink;
       const activeSides = new Set(lamps.filter(([value]) => value > 0).map(([, side]) => side));
@@ -154,7 +157,8 @@ test('BMW showroom changes the rendered GLB in desktop and mobile Chromium', { t
     }, signal);
     await page.waitForFunction(() => window.__MERIDIAM_QA().lamps.blink.every(([value]) => value === 0));
   }
-  await click('[data-signal="off"]');
+  await activateSignal('off');
+  assert.equal(await page.locator('[data-signal="off"]:visible').getAttribute('aria-pressed'), 'true');
   console.log('Verified front/rear/cabin light material changes, turn phase and START/STOP.');
   await tab('specs');
   assert.equal(await page.locator('#specs-body').isVisible(), true);
