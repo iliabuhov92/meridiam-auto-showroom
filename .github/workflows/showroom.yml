@@ -36,7 +36,7 @@ jobs:
           unzip -j "$RUNNER_TEMP/MERIDIAM_AUTO_SHOWROOM_source.zip" 'bmw_m3_g80.glb.part?' -d .
       - run: npm ci
       - run: npm run build
-      - run: npx playwright install --with-deps chromium --only-shell
+      - run: npx playwright install chromium --only-shell
       - run: npm test
       - uses: actions/upload-artifact@v4
         if: always()
