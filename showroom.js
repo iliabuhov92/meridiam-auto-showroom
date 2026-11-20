@@ -344,36 +344,53 @@ async function downloadPackedModel(prefix) {
     throw new Error('Некорректный список частей модели.');
   }
   const total = lengths.reduce((sum, length) => sum + length, 0);
-  const parts = new Array(lengths.length);
-  let next = 0;
+  const parts = [];
   let downloaded = 0;
-  async function downloadParts() {
-    while (next < lengths.length) {
-      const index = next++;
-      const url = prefix + '-' + index + '.bin';
-      for (let attempt = 0; attempt < 3; attempt++) {
-        try {
-          const response = await fetch(url, {
-            cache: attempt ? 'reload' : 'default',
-            signal: AbortSignal.timeout(120_000)
-          });
-          if (!response.ok) throw new Error('Часть модели недоступна.');
-          const bytes = await response.arrayBuffer();
-          if (bytes.byteLength !== lengths[index]) throw new Error('Часть модели скачалась не полностью.');
-          parts[index] = bytes;
-          downloaded += bytes.byteLength;
-          $('#progress').style.width = (downloaded / total * 100) + '%';
-          $('#status').textContent = 'Загрузка BMW: ' + (downloaded / 1e6).toFixed(1) + ' из ' + (total / 1e6).toFixed(1) + ' МБ';
-          break;
-        } catch (error) {
-          if (attempt === 2) throw error;
+  function report(bytes) {
+    $('#progress').style.width = (bytes / total * 100) + '%';
+    $('#status').textContent = 'Загрузка BMW: ' + (bytes / 1e6).toFixed(1) + ' из ' + (total / 1e6).toFixed(1) + ' МБ';
+  }
+  for (const [index, length] of lengths.entries()) {
+    const url = prefix + '-' + index + '.bin';
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const controller = new AbortController();
+      let idle;
+      function resetIdleTimer() {
+        clearTimeout(idle);
+        idle = setTimeout(() => controller.abort(), 65_000);
+      }
+      try {
+        resetIdleTimer();
+        const response = await fetch(url, {
+          cache: attempt ? 'reload' : 'default',
+          signal: controller.signal
+        });
+        if (!response.ok || !response.body) throw new Error('Часть модели недоступна.');
+        const reader = response.body.getReader();
+        const bytes = new Uint8Array(length);
+        let offset = 0;
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          resetIdleTimer();
+          if (offset + value.length > length) throw new Error('Неверный размер части модели.');
+          bytes.set(value, offset);
+          offset += value.length;
+          report(downloaded + offset);
         }
+        if (offset !== length) throw new Error('Часть модели скачалась не полностью.');
+        parts.push(bytes);
+        downloaded += length;
+        break;
+      } catch (error) {
+        controller.abort();
+        if (attempt === 2) throw error;
+        report(downloaded);
+      } finally {
+        clearTimeout(idle);
       }
     }
   }
-  const workers = await Promise.allSettled(Array.from({ length: Math.min(4, lengths.length) }, downloadParts));
-  const failure = workers.find(worker => worker.status === 'rejected');
-  if (failure) throw failure.reason;
   $('#status').textContent = 'Распаковываем BMW…';
   const decoded = new Blob(parts).stream().pipeThrough(new DecompressionStream('gzip'));
   return new Response(decoded).arrayBuffer();
