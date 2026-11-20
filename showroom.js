@@ -91,8 +91,9 @@ function changeWheels(){
 function changeSeat(){let col=state.seat==='cognac'?0x805137:state.seat==='cloth'?0x202b35:0x171b23;for(const m of seatMaterials){m.color.setHex(col);m.metalness=0;m.roughness=state.seat==='cloth'?.97:.71;m.clearcoat=state.seat==='cloth'?0:.13;m.needsUpdate=true}setSelected('[data-seat]','seat',state.seat)}
 function changeSpoiler(){if(originalWing)originalWing.visible=state.spoiler==='low';if(wingHigh)wingHigh.visible=state.spoiler==='high';setSelected('[data-spoiler]','spoiler',state.spoiler)}
 function setSelected(query,attr,value){$$(query).forEach(b=>{const selected=b.dataset[attr]===value;b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',String(selected))})}
+const openingRig = {fl:'MERIDIAM_RIG_DOOR_FRONT_LEFT',fr:'MERIDIAM_RIG_DOOR_FRONT_RIGHT',rl:'MERIDIAM_RIG_DOOR_REAR_LEFT',rr:'MERIDIAM_RIG_DOOR_REAR_RIGHT',trunk:'MERIDIAM_RIG_TRUNK_LID'};
 function updateDoorButtons(){ $$('[data-part]').forEach(b=>b.classList.toggle('selected',state.targetDoors[b.dataset.part]>0)) }
-function toggleDoor(p){const key={fl:'MERIDIAM_RIG_DOOR_FRONT_LEFT',fr:'MERIDIAM_RIG_DOOR_FRONT_RIGHT',rl:'MERIDIAM_RIG_DOOR_REAR_LEFT',rr:'MERIDIAM_RIG_DOOR_REAR_RIGHT',trunk:'MERIDIAM_RIG_TRUNK_LID'}[p];if(!pivots[key]){say('Деталь не найдена в модели');return}state.targetDoors[p]=state.targetDoors[p]===0?1:0;updateDoorButtons()}
+function toggleDoor(p){const key=openingRig[p];if(!pivots[key]){say('Деталь не найдена в модели');return}state.targetDoors[p]=state.targetDoors[p]===0?1:0;updateDoorButtons()}
 function closeDoors(){Object.keys(state.targetDoors).forEach(k=>state.targetDoors[k]=0);updateDoorButtons()}
 function angularTarget(p,v){const signs={fl:-1,fr:1,rl:-1,rr:1};return p==='trunk'?v*.88:(signs[p]||1)*v*.67}
 // Light effects target actual original GLB lenses; original albedo, opacity and geometry are retained.
@@ -234,9 +235,78 @@ function normalize(glb){if(carInner){carRoot.clear();carInner=null}paints.length
  }
  console.info('MERIDIAM model', {nodes,materials:{paint:paints.length,glass:glass.length,seats:seatMaterials.length,wheels:wheelMaterials.length},pivots:Object.keys(pivots)});
 }
-function parse(data){$('#status').textContent='Подготавливаем 3D-модель…';new GLTFLoader().parse(data,'',g=>{try{normalize(g)}catch(e){console.error(e);$('#status').textContent='Ошибка сцены: '+e.message}},e=>{console.error(e);$('#status').textContent='GLB: '+e.message})}
-async function autoload(){if(!location.protocol.startsWith('http')){$('#status').textContent='Выбери файл BMW с компьютера';return}try{let response=await fetch('./bmw_m3_g80_meridiam.glb');if(!response.ok)throw Error('GLB недоступен');let total=+response.headers.get('Content-Length')||0;let bytes;if(response.body&&total){let reader=response.body.getReader(),parts=[],count=0;while(true){let {done,value}=await reader.read();if(done)break;parts.push(value);count+=value.length;$('#progress').style.width=(count/total*100).toFixed(1)+'%';$('#status').textContent='Загрузка модели: '+Math.round(count/1e6)+' МБ'}bytes=new Uint8Array(count);let off=0;for(let p of parts){bytes.set(p,off);off+=p.length}}else bytes=new Uint8Array(await response.arrayBuffer());parse(bytes.buffer)}catch(e){$('#status').textContent='Выбери GLB из папки проекта'}}
-$('#fileInput').addEventListener('change',async e=>{let file=e.target.files[0];if(!file)return;$('#status').textContent='Чтение '+(file.size/1e6).toFixed(1)+' МБ…';$('#progress').style.width='100%';try{parse(await file.arrayBuffer())}catch(err){$('#status').textContent=err.message}});autoload();
+const fileInput = $('#fileInput');
+const filePicker = fileInput.closest('label');
+const modelHash = '7229ea2876f2497f779574e3e094c4ad97b94eaad941cbca6975411560e68ea9';
+const loader = new GLTFLoader();
+
+async function loadInteractiveModel(bytes) {
+  $('#status').textContent = 'Проверяем 3D-модель BMW…';
+  const glb = await loader.parseAsync(bytes, '');
+  for (const name of Object.values(openingRig)) {
+    const hinge = glb.scene.getObjectByName(name);
+    if (!hinge || !hinge.getObjectByProperty('isMesh', true)) {
+      throw new Error('В этом GLB нет механизма дверей и багажника. Нужен bmw_m3_g80_meridiam.glb из архива шоурума.');
+    }
+  }
+  normalize(glb);
+}
+
+async function autoload() {
+  if (!location.protocol.startsWith('http')) {
+    $('#status').textContent = 'Выбери bmw_m3_g80_meridiam.glb из архива шоурума';
+    return;
+  }
+  filePicker.classList.add('hidden');
+  fileInput.disabled = true;
+  const modelUrl = './bmw_m3_g80_meridiam.glb?v=' + modelHash.slice(0, 12);
+  try {
+    const response = await fetch(modelUrl);
+    if (!response.ok) throw new Error('Сайт не смог скачать модель BMW.');
+    const total = Number(response.headers.get('Content-Length')) || 0;
+    let bytes;
+    if (response.body) {
+      let downloaded = 0;
+      const tracked = response.body.pipeThrough(new TransformStream({
+        transform(chunk, controller) {
+          downloaded += chunk.byteLength;
+          if (total) $('#progress').style.width = Math.min(100, downloaded / total * 100) + '%';
+          $('#status').textContent = 'Загрузка BMW: ' + (downloaded / 1e6).toFixed(1) + ' МБ';
+          controller.enqueue(chunk);
+        }
+      }));
+      bytes = await new Response(tracked).arrayBuffer();
+    } else {
+      bytes = await response.arrayBuffer();
+    }
+    if (globalThis.crypto?.subtle) {
+      const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+      const actual = Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join('');
+      if (actual !== modelHash) throw new Error('Сайт получил другую версию BMW. Обнови страницу или выбери GLB из архива шоурума.');
+    }
+    await loadInteractiveModel(bytes);
+  } catch (error) {
+    fileInput.disabled = false;
+    filePicker.classList.remove('hidden');
+    $('#status').textContent = error.message;
+  }
+}
+
+fileInput.addEventListener('change', async event => {
+  const file = event.target.files[0];
+  if (!file) return;
+  fileInput.disabled = true;
+  $('#status').textContent = 'Чтение ' + (file.size / 1e6).toFixed(1) + ' МБ…';
+  try {
+    await loadInteractiveModel(await file.arrayBuffer());
+  } catch (error) {
+    $('#status').textContent = error.message;
+    fileInput.value = '';
+  } finally {
+    fileInput.disabled = false;
+  }
+});
+autoload();
 function setTab(tab){state.tab=tab;const titles={overview:'Управление',salon:'Салон',config:'Конфигурация',light:'Освещение',specs:'О проекте'};$('#panelTitle').textContent=titles[tab];for(const s of ['overview','salon','config','light','specs'])$('#'+s+'-body').hidden=tab!==s;setSelected('[data-tab]','tab',tab);$('#views').classList.toggle('hidden',tab==='salon');if(tab!=='salon'&&state.interior){state.interior=null;setView('hero');$('#hint').textContent='Вращайте BMW мышью или касанием'}if(tab==='salon'){state.interior='driver';setCabin('driver')};$('.configuration').scrollTop=0}
 function setView(key){state.interior=null;state.view=key;const headOn=Math.atan2(4.30,8.45);const angles={hero:headOn+.79,front:headOn,side:headOn-Math.PI/2,rear:headOn-Math.PI};state.rotation=angles[key]??angles.hero;state.zoom=1;state.auto=false;$('#rotation').classList.remove('selected');setSelected('[data-view]','view',key)}
 // Cabin anchors are in the normalized model's coordinates; +X is the driver side.
@@ -265,7 +335,7 @@ renderer.domElement.addEventListener('pointermove',e=>{if(dragging){state.rotati
 renderer.domElement.addEventListener('pointerup',e=>{dragging=false});renderer.domElement.addEventListener('pointercancel',()=>dragging=false);
 renderer.domElement.addEventListener('wheel',e=>{if(state.interior)return;e.preventDefault();state.zoom=THREE.MathUtils.clamp(state.zoom+e.deltaY*.00065,.78,1.48)},{passive:false});
 // Hotspots project rig pivots into the viewport and rotate with the car.
-function spotPoint(part){const mapping={fl:'MERIDIAM_RIG_DOOR_FRONT_LEFT',fr:'MERIDIAM_RIG_DOOR_FRONT_RIGHT',rl:'MERIDIAM_RIG_DOOR_REAR_LEFT',rr:'MERIDIAM_RIG_DOOR_REAR_RIGHT',trunk:'MERIDIAM_RIG_TRUNK_LID'};let p=pivots[mapping[part]];if(!p)return null;const point=new THREE.Vector3();p.getWorldPosition(point);return point}
+function spotPoint(part){let p=pivots[openingRig[part]];if(!p)return null;const point=new THREE.Vector3();p.getWorldPosition(point);return point}
 function updateSpots(){for(const part of Object.keys(state.targetDoors)){let btn=$('#spot-'+part);if(!isLoaded||state.interior||!['overview'].includes(state.tab)){btn.classList.remove('visible');continue}let p=spotPoint(part);if(!p){btn.classList.remove('visible');continue}p.project(camera);let x=(p.x*.5+.5)*innerWidth,y=(-p.y*.5+.5)*innerHeight;const visible=p.z<1&&x>50&&x<innerWidth-315&&y>210&&y<innerHeight-155;btn.classList.toggle('visible',visible);if(visible){btn.style.left=x+'px';btn.style.top=y+'px';btn.textContent=state.targetDoors[part]?'-':'+'}}}
 let last = performance.now();
 let renderedKey = '';
@@ -280,8 +350,7 @@ function animate(now) {
  const yawDelta=THREE.MathUtils.euclideanModulo(state.rotation-carRoot.rotation.y+Math.PI,Math.PI*2)-Math.PI;carRoot.rotation.y+=Math.abs(yawDelta)<.0005?yawDelta:yawDelta*(1-Math.exp(-9*dt));
  podium.rotation.y=carRoot.rotation.y;
  // Articulation hinges are in model source units, corrected during GLB preparation.
- const rig={fl:'MERIDIAM_RIG_DOOR_FRONT_LEFT',fr:'MERIDIAM_RIG_DOOR_FRONT_RIGHT',rl:'MERIDIAM_RIG_DOOR_REAR_LEFT',rr:'MERIDIAM_RIG_DOOR_REAR_RIGHT',trunk:'MERIDIAM_RIG_TRUNK_LID'};
- for(const [part,name]of Object.entries(rig)){let o=pivots[name];if(!o)continue;const delta=Math.abs(state.doors[part]-state.targetDoors[part]);movingHinge||=delta>.0005;state.doors[part]=delta>.0005?THREE.MathUtils.damp(state.doors[part],state.targetDoors[part],6,dt):state.targetDoors[part];o.rotation.y=part==='trunk'?0:angularTarget(part,state.doors[part]);if(part==='trunk')o.rotation.x=angularTarget(part,state.doors[part])}
+ for(const [part,name]of Object.entries(openingRig)){let o=pivots[name];if(!o)continue;const delta=Math.abs(state.doors[part]-state.targetDoors[part]);movingHinge||=delta>.0005;state.doors[part]=delta>.0005?THREE.MathUtils.damp(state.doors[part],state.targetDoors[part],6,dt):state.targetDoors[part];o.rotation.y=part==='trunk'?0:angularTarget(part,state.doors[part]);if(part==='trunk')o.rotation.x=angularTarget(part,state.doors[part])}
  if (state.interior) {
    const [eye, focus] = cabinViews[state.interior];
    desiredCam.copy(carRoot.localToWorld(cabinEye.fromArray(eye)));
