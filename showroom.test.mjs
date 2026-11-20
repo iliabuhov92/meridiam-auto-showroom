@@ -71,6 +71,10 @@ test('BMW showroom changes the rendered GLB in desktop and mobile Chromium', { t
   assert.deepEqual((await scene()).spoilers, [false, true]);
   await click('[data-spoiler="low"]');
   assert.deepEqual((await scene()).spoilers, [true, false]);
+  await click('[data-wheel-design="split"]');
+  assert.deepEqual((await scene()).wheelDesigns, Array.from({ length: 4 }, () => [false, true]));
+  await click('[data-wheel-design="factory"]');
+  assert.deepEqual((await scene()).wheelDesigns, Array.from({ length: 4 }, () => [true, false]));
   for (const finish of ['cloth', 'cognac', 'leather']) {
     const before = (await scene()).seats;
     await click('[data-seat="' + finish + '"]');
@@ -113,14 +117,25 @@ test('BMW showroom changes the rendered GLB in desktop and mobile Chromium', { t
   console.log('Verified five moving mesh groups, close all, four views and drag.');
 
   await tab('salon');
-  for (const [name, x] of [['driver', -.24], ['passenger', -1.16], ['rear', -.46]]) {
+  for (const [name, x] of [['driver', -.24], ['passenger', -1.16], ['rear', -.65]]) {
     await click('[data-cabin="' + name + '"]');
     await page.waitForFunction(x => Math.abs(window.__MERIDIAM_QA().camera[0] - x) < .08, x);
+    const before = await scene();
+    await page.mouse.move(500, 410);
+    await page.mouse.down();
+    await page.mouse.move(650, 460);
+    await page.mouse.up();
+    await page.waitForFunction(({ gaze }) => {
+      const next = window.__MERIDIAM_QA().gaze;
+      return Math.abs(next[0] - gaze[0]) > .2 && Math.abs(next[1] - gaze[1]) > .1;
+    }, before);
+    assert.ok(Math.abs((await scene()).camera[0] - x) < .08);
+    await click('[data-cabin="' + name + '"]');
   }
   await snapshot(page, '03-rear-cabin');
   await click('[data-cabin="driver"]');
   await click('[data-start-engine]');
-  assert.notEqual((await scene()).audio, null);
+  await page.waitForFunction(() => window.__MERIDIAM_QA().audio === 'running');
   assert.ok(await page.evaluate(() => window.__MERIDIAM_AUDIO_QA()) > .004);
   console.log('Verified engine waveform offline. Live output state:', (await scene()).audio);
   assert.equal(await page.locator('#digitalText').textContent(), 'READY / P');
