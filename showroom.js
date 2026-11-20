@@ -13,7 +13,11 @@ const lookTarget=new THREE.Vector3(-.65,1.12,0),desiredCam=new THREE.Vector3(4.4
 // Luminous studio environment, broad reflection panels, not harsh point sources.
 const env=document.createElement('canvas');env.width=2048;env.height=1024;let c=env.getContext('2d');let gr=c.createLinearGradient(0,0,0,1024);gr.addColorStop(0,'#3b536a');gr.addColorStop(.42,'#192a3d');gr.addColorStop(.62,'#132334');gr.addColorStop(1,'#101924');c.fillStyle=gr;c.fillRect(0,0,2048,1024);
 function softbox(x,y,w,h,alpha){c.save();c.globalAlpha=alpha;c.shadowColor='#dbeeff';c.shadowBlur=52;let g=c.createLinearGradient(x,y,x+w,y);g.addColorStop(0,'#647c91');g.addColorStop(.12,'#d5e7f5');g.addColorStop(.5,'#ffffff');g.addColorStop(.9,'#d1e4f4');g.addColorStop(1,'#728ca3');c.fillStyle=g;c.fillRect(x,y,w,h);c.restore()}
-softbox(95,170,140,590,.95);softbox(440,145,420,130,.96);softbox(1090,145,150,570,.88);softbox(1460,180,410,140,.89);softbox(490,65,1060,36,.92);softbox(110,345,940,30,.82);softbox(1150,385,750,22,.75);softbox(1950,280,50,380,.6);
+softbox(95,170,140,590,.95);softbox(440,145,420,130,.96);softbox(1090,145,150,570,.88);softbox(1460,180,410,140,.89);softbox(490,65,1060,36,.92);softbox(110,345,940,30,.82);softbox(1150,385,750,22,.75);
+// Narrow luminous bands give the clear coat a readable edge along the body.
+c.fillStyle='#f0f7ff';
+c.fillRect(68,310,895,12);
+c.fillRect(1165,353,732,10);softbox(1950,280,50,380,.6);
 const environment=new THREE.CanvasTexture(env);environment.mapping=THREE.EquirectangularReflectionMapping;environment.colorSpace=THREE.SRGBColorSpace;
 const pmrem=new THREE.PMREMGenerator(renderer),envRT=pmrem.fromEquirectangular(environment);scene.environment=envRT.texture;scene.environmentIntensity=1.05;environment.dispose();pmrem.dispose();
 scene.add(new THREE.HemisphereLight(0xc9e5fd,0x151b25,.82));
@@ -53,8 +57,7 @@ floorReflection.position.set(0, -.052, -1);
 scene.add(floorReflection);
 
 const podium=new THREE.Group();podium.position.x=-.70;scene.add(podium);const base=new THREE.Mesh(new THREE.CylinderGeometry(3.67,3.7,.25,128),mat(0x0b131d,.52,.3));base.position.y=.06;base.receiveShadow=true;podium.add(base);const upper=new THREE.Mesh(new THREE.CylinderGeometry(3.66,3.66,.012,128),mat(0x121923,.42,.38));upper.position.y=.192;upper.receiveShadow=true;podium.add(upper);const ring=new THREE.Mesh(new THREE.TorusGeometry(3.665,.016,10,160),new THREE.MeshBasicMaterial({color:new THREE.Color(0xc7eaff).multiplyScalar(1.65)}));ring.rotation.x=-Math.PI/2;ring.position.y=.204;podium.add(ring);const ringHalo=new THREE.Mesh(new THREE.TorusGeometry(3.69,.032,6,160),new THREE.MeshBasicMaterial({color:0x244a67,transparent:true,opacity:.4}));ringHalo.rotation.x=-Math.PI/2;ringHalo.position.y=.192;podium.add(ringHalo);
-const wallMat=mat(0x171b23,.44,.56);function wall(x,y,z,w,h,ry){let mesh=new THREE.Mesh(new THREE.PlaneGeometry(w,h),wallMat);mesh.position.set(x,y,z);mesh.rotation.y=ry;scene.add(mesh)}wall(0,4,-13,29,9,0);wall(-13.8,4,0,25,9,Math.PI/2);wall(13.8,4,0,25,9,-Math.PI/2);
-for(let x=-12;x<=12;x+=3.4){let p=new THREE.Mesh(new THREE.BoxGeometry(.075,8,.1),mat(0x30475b,.55,.4));p.position.set(x,4,-12.86);scene.add(p);let line=new THREE.Mesh(new THREE.BoxGeometry(.026,6.9,.055),new THREE.MeshBasicMaterial({color:0x397298}));line.position.set(x+.12,4,-12.78);scene.add(line)}
+const wallMat=mat(0x171b23,.44,.56);function wall(x,y,z,w,h,ry){let mesh=new THREE.Mesh(new THREE.PlaneGeometry(w,h),wallMat);mesh.position.set(x,y,z);mesh.rotation.y=ry;scene.add(mesh)}wall(-8,4,-13,13,9,0);wall(8,2.8,-23,17,6,0);wall(-13.8,4,0,25,9,Math.PI/2);wall(13.8,4,0,25,9,-Math.PI/2);
 const ceilingLine=new THREE.Mesh(new THREE.TorusGeometry(10.3,.035,7,180,Math.PI),new THREE.MeshBasicMaterial({color:0xc2e5ff}));ceilingLine.rotation.set(Math.PI/2,0,-.1);ceilingLine.position.set(0,4.8,-4.8);scene.add(ceilingLine);
 // Recessed panes, brushed mullions and indirect lighting give the room a second depth plane.
 const graphite = mat(0x10151c, .66, .37);
@@ -69,16 +72,31 @@ function architecturalBox(size, position, material) {
   return mesh;
 }
 
-for (let x = -10; x <= 9; x += 2.5) {
-  architecturalBox([2.37, 5.2, .07], [x, 2.6, -12.55], glazing);
-  architecturalBox([.10, 5.6, .21], [x + 1.23, 2.8, -12.36], graphite);
+// The right-hand gallery continues beyond the main wall. Frames and
+// repeated ceiling fixtures establish depth at every exterior camera angle.
+for (let x = -13.4; x < -1.5; x += 2.9) {
+  architecturalBox([.025, 4.6, .045], [x, 2.3, -12.93], graphite);
 }
-architecturalBox([27, .08, .18], [0, .11, -12.2], whiteLight);
-architecturalBox([27, .037, .12], [0, 4.7, -12.2], whiteLight);
-architecturalBox([.10, .038, 21], [-13.65, 4.7, -2.2], whiteLight);
-for (let z = -11.5; z < -5; z += 1.9) {
-  architecturalBox([5.5, .018, .06], [6.5, 4.27, z], galleryLight);
+for (let x = -1.4; x <= 13; x += 2.8) {
+  architecturalBox([.14, 5.3, .32], [x, 2.65, -12.52], graphite);
 }
+architecturalBox([15, .36, .45], [6, 5.08, -12.51], graphite);
+architecturalBox([15, .12, .26], [6, .02, -12.5], graphite);
+architecturalBox([14, .12, 10], [6.4, 4.88, -17.65], graphite);
+architecturalBox([.12, 5, 10], [-1.4, 2.5, -17.65], glazing);
+architecturalBox([.14, 5, 10], [13.5, 2.5, -17.65], graphite);
+architecturalBox([11.9, .054, .09], [-7.6, .11, -12.72], whiteLight);
+architecturalBox([12, .032, .09], [-7.6, 4.26, -12.75], whiteLight);
+for (let z = -13.7; z > -22; z -= 2.5) {
+  architecturalBox([10.9, .034, .085], [6.1, 4.79, z], galleryLight);
+  architecturalBox([.06, .032, 1.8], [11.4, .02, z], whiteLight);
+}
+const galleryFill = new THREE.PointLight(0x92bce6, 90, 20, 2);
+galleryFill.position.set(3.5, 3.6, -16.3);
+scene.add(galleryFill);
+const galleryAccent = new THREE.PointLight(0xeaba82, 65, 16, 2);
+galleryAccent.position.set(9.3, 3.4, -20);
+scene.add(galleryAccent);
 
 // Keep a soft contact shadow beneath all four tyres, even in low-power graphics modes.
 const shadowCanvas = document.createElement('canvas');
@@ -101,7 +119,7 @@ podium.add(contactShadow);
 const carRoot=new THREE.Group();carRoot.position.x=-.70;scene.add(carRoot);let carInner=null,carScale=1,carCenter=new THREE.Vector3(),isLoaded=false,originalWing=null,wingHigh=null;
 const state={tab:'overview',color:'black',finish:'gloss',wheel:'dark',spoiler:'low',seat:'leather',view:'hero',interior:null,light:'drl',signal:'off',rear:true,ambient:true,engine:false,auto:false,rotation:-.28,zoom:1,doors:{fl:0,fr:0,rl:0,rr:0,trunk:0},targetDoors:{fl:0,fr:0,rl:0,rr:0,trunk:0}};
 const paints=[],glass=[],seatMaterials=[],wheelMaterials=[],lightMeshes={drl:[],low:[],rear:[],blink:[],dash:[],cabin:[]},blinkSideMap=new WeakMap(),pivots={};const lights=[];
-const colors={black:0x111b28,white:0xe4e7ea,blue:0x164c95};
+const colors={black:0x0b111a,white:0xe4e7ea,blue:0x164c95};
 function partFromName(name) {
   if (/povorotnik|indicator|blinker/.test(name)) return 'blink';
   if (/lowhighbeam/.test(name)) return 'low';
@@ -112,7 +130,20 @@ function partFromName(name) {
   return null;
 }
 function setMaterialOnce(mesh,handler){if(Array.isArray(mesh.material)){mesh.material=mesh.material.map(m=>handler(m))}else mesh.material=handler(mesh.material)}
-function changeColor(){const hex=colors[state.color];for(const m of paints){m.color.setHex(hex);m.metalness=state.finish==='matte'?.18:.55;m.roughness=state.finish==='matte'?.64:.22;m.clearcoat=state.finish==='matte'?0:1;m.clearcoatRoughness=.12;m.envMapIntensity=state.finish==='matte'?.7:1.35;m.needsUpdate=true}setSelected('[data-color]','color',state.color);setSelected('[data-finish]','finish',state.finish)}
+function changeColor() {
+  const matte = state.finish === 'matte';
+  for (const material of paints) {
+    material.color.setHex(colors[state.color]);
+    material.metalness = matte ? .18 : .64;
+    material.roughness = matte ? .64 : .16;
+    material.clearcoat = matte ? 0 : 1;
+    material.clearcoatRoughness = .055;
+    material.envMapIntensity = matte ? .7 : 1.65;
+    material.needsUpdate = true;
+  }
+  setSelected('[data-color]', 'color', state.color);
+  setSelected('[data-finish]', 'finish', state.finish);
+}
 function changeWheels(){
  const silver=state.wheel==='silver';
  for(const m of wheelMaterials){m.color.setHex(silver?0xb6bdc6:0x20262d);m.metalness=.78;m.roughness=silver?.29:.34;m.envMapIntensity=silver?1.2:.9;m.needsUpdate=true}
@@ -201,7 +232,7 @@ function normalize(glb){if(carInner){carRoot.clear();carInner=null}paints.length
  if(!o.isMesh)return;
  o.castShadow=!/windows|windshield/i.test(o.name);o.receiveShadow=true;
  setMaterialOnce(o,m=>{let name=(m.name||'').toLowerCase(),oname=parentPath(o),kind=partFromName(oname+' '+name);
- if(name.includes('sapphire black')||(/paint_(hood|doors|trunk|fender|top|front|rear|bumper|fb|rb|gascap)/.test(oname)&&name.includes('paint'))){let clone=m.clone();clone.name='MERIDIAM_PAINT_'+o.name;clone.map=null;clone.color.setHex(colors[state.color]);clone.metalness=.55;clone.roughness=.22;clone.clearcoat=1;clone.clearcoatRoughness=.12;clone.envMapIntensity=1.35;paints.push(clone);return clone}
+ if(name.includes('sapphire black')||(/paint_(hood|doors|trunk|fender|top|front|rear|bumper|fb|rb|gascap)/.test(oname)&&name.includes('paint'))){const paint=m.clone();paint.name='MERIDIAM_PAINT_'+o.name;paint.map=null;paints.push(paint);return paint}
  if(name.includes('meridiam | windshield')||name.includes('meridiam | side windows')||name.includes('meridiam | rear window')||name.includes('meridiam | interior glazing')){let clone=m.clone();clone.depthWrite=false;clone.transparent=true;clone.side=THREE.FrontSide;clone.opacity=name.includes('inner')?.04:.26;clone.color.setHex(0x19222b);clone.metalness=.2;clone.roughness=.16;clone.envMapIntensity=.34;glass.push(clone);o.castShadow=false;return clone}
  if(/meridiam.*(seat bolsters|seat inserts)|seat_leather|alkantaraseat|seat_koga|seat_alc|int_paint3/i.test(name+' '+oname)){let clone=m.clone();clone.name='MERIDIAM_SEAT_'+o.name;clone.color.setHex(0x242931);clone.metalness=0;clone.roughness=.75;seatMaterials.push(clone);return clone}
  if(/g80_rim_|rim(_|[0-9])|rim_metal|rim_ring/.test(oname)&&!/brake|disc|tyre|tire|rim_badge|rim_m_badge|rim_logo|nipel|screws/i.test(oname)){let clone=m.clone();clone.name='MERIDIAM_RIM_'+o.name;clone.map=null;clone.metalness=.78;clone.roughness=.34;wheelMaterials.push(clone);return clone}
