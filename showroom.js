@@ -79,6 +79,60 @@ contactShadow.rotation.x = -Math.PI / 2;
 contactShadow.position.y = .202;
 podium.add(contactShadow);
 const carRoot=new THREE.Group();carRoot.position.x=-.70;scene.add(carRoot);let carInner=null,carScale=1,carCenter=new THREE.Vector3(),isLoaded=false,originalWing=null,wingHigh=null;
+// Low-beam footprint on the two receiving surfaces. Its overlap follows the
+// circular plinth and uses the same forward axis as the headlamp spotlights.
+const beamFootprint = new THREE.Group();
+const beamTexture = document.createElement('canvas');
+beamTexture.width = beamTexture.height = 256;
+const beamContext = beamTexture.getContext('2d');
+const beamFalloff = beamContext.createRadialGradient(128, 128, 0, 128, 128, 126);
+beamFalloff.addColorStop(0, 'rgba(190,218,255,0.55)');
+beamFalloff.addColorStop(.45, 'rgba(181,216,255,0.37)');
+beamFalloff.addColorStop(1, 'rgba(168,206,255,0)');
+beamContext.fillStyle = beamFalloff;
+beamContext.fillRect(0, 0, 256, 256);
+const beamMap = new THREE.CanvasTexture(beamTexture);
+beamMap.colorSpace = THREE.SRGBColorSpace;
+const beamGeometry = new THREE.PlaneGeometry(3.3, 5.1);
+for (const onPodium of [true, false]) {
+  for (const x of [-1.12, 1.12]) {
+    const material = new THREE.ShaderMaterial({
+      uniforms: {
+        footprint: { value: beamMap }, onPodium: { value: onPodium }, lampOffset: { value: x }
+      },
+      vertexShader: `
+        uniform float lampOffset;
+        varying vec2 coords;
+        varying vec2 floorPoint;
+        void main() {
+          coords = uv;
+          floorPoint = vec2(position.x + lampOffset, 5.1 - position.y);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }`,
+      fragmentShader: `
+        uniform sampler2D footprint;
+        uniform bool onPodium;
+        varying vec2 coords;
+        varying vec2 floorPoint;
+        void main() {
+          bool inside = length(floorPoint) < 3.66;
+          if (inside != onPodium) discard;
+          vec4 glow = texture2D(footprint, coords);
+          gl_FragColor = vec4(glow.rgb, glow.a * .48);
+        }`,
+      transparent: true,
+      depthWrite: false,
+      blending: THREE.AdditiveBlending
+    });
+    const patch = new THREE.Mesh(beamGeometry, material);
+    patch.position.set(x, onPodium ? .201 : -.052, 5.1);
+    patch.rotation.x = -Math.PI / 2;
+    beamFootprint.add(patch);
+  }
+}
+beamFootprint.visible = false;
+podium.add(beamFootprint);
+
 const state={tab:'overview',color:'black',finish:'gloss',wheel:'dark',spoiler:'low',seat:'leather',view:'hero',interior:null,light:'drl',signal:'off',rear:true,ambient:true,engine:false,auto:false,rotation:-.28,zoom:1,doors:{fl:0,fr:0,rl:0,rr:0,trunk:0},targetDoors:{fl:0,fr:0,rl:0,rr:0,trunk:0}};
 const paints=[],glass=[],seatMaterials=[],wheelMaterials=[],lightMeshes={drl:[],low:[],rear:[],blink:[],dash:[],cabin:[]},blinkSideMap=new WeakMap(),pivots={};const lights=[];
 const colors={black:0x111820,white:0xe8e8e4,blue:0x174d98};
@@ -212,6 +266,7 @@ function illuminate(materials, color, intensity) {
 
 function configureLights() {
   const low = state.light === 'low';
+  beamFootprint.visible = low;
   illuminate(lightMeshes.drl, 0xd6f0ff, state.light === 'off' ? 0 : 1.8);
   illuminate(lightMeshes.low, 0xe1f2ff, low ? 2.5 : 0);
   illuminate(lightMeshes.rear, 0xff1628, state.rear ? 1.05 : 0);
@@ -919,5 +974,29 @@ function resize() {
 }
 addEventListener('resize', resize);
 resize();
-const mobileToggle=$('#mobilePanelToggle');mobileToggle.onclick=()=>{const panel=$('#config');const open=panel.classList.toggle('mobile-open');mobileToggle.setAttribute('aria-expanded',String(open));mobileToggle.textContent=open?'Закрыть настройки ✕':'Настройки ⌄'};
+const mobileToggle = $('#mobilePanelToggle');
+const mobilePanel = $('#config');
+function toggleMobilePanel() {
+  const open = mobilePanel.classList.toggle('mobile-open');
+  mobileToggle.setAttribute('aria-expanded', String(open));
+  mobileToggle.textContent = open ? 'Закрыть настройки ✕' : 'Настройки ⌄';
+}
+mobileToggle.onclick = toggleMobilePanel;
+mobileToggle.style.touchAction = 'manipulation';
+// A tap immediately after a canvas swipe can lose its synthesized click.
+let panelTap = null;
+mobileToggle.addEventListener('touchstart', event => {
+  panelTap = event.touches.length === 1 ? event.changedTouches[0] : null;
+}, { passive: true });
+mobileToggle.addEventListener('touchcancel', () => { panelTap = null; });
+mobileToggle.addEventListener('touchend', event => {
+  const start = panelTap;
+  panelTap = null;
+  if (!start) return;
+  const end = [...event.changedTouches].find(touch => touch.identifier === start.identifier);
+  if (!end || Math.hypot(end.clientX - start.clientX, end.clientY - start.clientY) > 10 ||
+      !mobileToggle.contains(document.elementFromPoint(end.clientX, end.clientY))) return;
+  event.preventDefault();
+  toggleMobilePanel();
+}, { passive: false });
 addEventListener('keydown',e=>{if(e.key==='Escape'){$('#contactModal').classList.add('hidden');if(state.interior)setTab('overview')}});
