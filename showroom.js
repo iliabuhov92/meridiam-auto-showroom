@@ -27,7 +27,7 @@ for(let x=-12;x<=12;x+=3.4){let p=new THREE.Mesh(new THREE.BoxGeometry(.075,8,.1
 const ceilingLine=new THREE.Mesh(new THREE.TorusGeometry(10.3,.035,7,180,Math.PI),new THREE.MeshBasicMaterial({color:0xc2e5ff}));ceilingLine.rotation.set(Math.PI/2,0,-.1);ceilingLine.position.set(0,4.8,-4.8);scene.add(ceilingLine);
 // Recessed panes, brushed mullions and indirect lighting give the room a second depth plane.
 const graphite = mat(0x10151c, .66, .37);
-const glazing = mat(0x243846, .79, .19);
+const glazing = mat(0x1d2c37, .58, .29);
 const whiteLight = new THREE.MeshBasicMaterial({ color: 0xb8ddff });
 const galleryLight = new THREE.MeshBasicMaterial({ color: 0xab8b64 });
 
@@ -45,6 +45,17 @@ for (let x = -10; x <= 9; x += 2.5) {
 architecturalBox([27, .08, .18], [0, .11, -12.2], whiteLight);
 architecturalBox([27, .037, .12], [0, 4.7, -12.2], whiteLight);
 architecturalBox([.10, .038, 21], [-13.65, 4.7, -2.2], whiteLight);
+// Side bays create a readable foreground and background during the exterior orbit.
+const concrete = mat(0x202731, .22, .69);
+const recess = mat(0x131c25, .36, .43);
+for (const side of [-1, 1]) {
+  for (let z = -10; z <= 8; z += 4.5) {
+    architecturalBox([.18, 3.85, 4.18], [side * 13.62, 1.96, z], recess);
+    architecturalBox([.46, 5.2, .23], [side * 13.43, 2.6, z - 2.2], concrete);
+    architecturalBox([.065, .042, 3.95], [side * 13.49, .18, z], galleryLight);
+  }
+}
+
 for (let z = -11.5; z < -5; z += 1.9) {
   architecturalBox([5.5, .018, .06], [6.5, 4.27, z], galleryLight);
 }
@@ -70,7 +81,7 @@ podium.add(contactShadow);
 const carRoot=new THREE.Group();carRoot.position.x=-.70;scene.add(carRoot);let carInner=null,carScale=1,carCenter=new THREE.Vector3(),isLoaded=false,originalWing=null,wingHigh=null;
 const state={tab:'overview',color:'black',finish:'gloss',wheel:'dark',spoiler:'low',seat:'leather',view:'hero',interior:null,light:'drl',signal:'off',rear:true,ambient:true,engine:false,auto:false,rotation:-.28,zoom:1,doors:{fl:0,fr:0,rl:0,rr:0,trunk:0},targetDoors:{fl:0,fr:0,rl:0,rr:0,trunk:0}};
 const paints=[],glass=[],seatMaterials=[],wheelMaterials=[],lightMeshes={drl:[],low:[],rear:[],blink:[],dash:[],cabin:[]},blinkSideMap=new WeakMap(),pivots={};const lights=[];
-const colors={black:0x111b28,white:0xe4e7ea,blue:0x164c95};
+const colors={black:0x111820,white:0xe8e8e4,blue:0x174d98};
 function partFromName(name) {
   if (/povorotnik|indicator|blinker/.test(name)) return 'blink';
   if (/lowhighbeam/.test(name)) return 'low';
@@ -82,6 +93,76 @@ function partFromName(name) {
 }
 function setMaterialOnce(mesh,handler){if(Array.isArray(mesh.material)){mesh.material=mesh.material.map(m=>handler(m))}else mesh.material=handler(mesh.material)}
 function changeColor(){const hex=colors[state.color];for(const m of paints){m.color.setHex(hex);m.metalness=state.finish==='matte'?.18:.55;m.roughness=state.finish==='matte'?.64:.22;m.clearcoat=state.finish==='matte'?0:1;m.clearcoatRoughness=.12;m.envMapIntensity=state.finish==='matte'?.7:1.35;m.needsUpdate=true}setSelected('[data-color]','color',state.color);setSelected('[data-finish]','finish',state.finish)}
+const wheelFaces = [];
+let wheelDesign = 'factory';
+
+// The alternate face seats in the original barrel diameter. Its ten swept
+// spokes are split into five pairs and share the original hub and wheel axes.
+function sportWheelFace(radius, depth, material) {
+  const face = new THREE.Group();
+  const profile = [[.94, -.36], [1, -.29], [1, -.06], [.985, 0], [.95, 0], [.927, -.11], [.927, -.36]];
+  const lip = new THREE.Mesh(new THREE.LatheGeometry(
+    profile.map(([r, z]) => new THREE.Vector2(r * radius, z * depth)), 80
+  ), material);
+  lip.rotation.x = Math.PI / 2;
+  face.add(lip);
+  for (const direction of [-1, 1]) {
+    const outline = new THREE.Shape();
+    outline.moveTo(.17 * radius, -.044 * radius);
+    outline.bezierCurveTo(.39 * radius, -.037 * radius, .69 * radius, direction * .1 * radius, .96 * radius, direction * .17 * radius);
+    outline.lineTo(.94 * radius, direction * .17 * radius + .068 * radius);
+    outline.bezierCurveTo(.69 * radius, direction * .1 * radius + .072 * radius, .35 * radius, .055 * radius, .17 * radius, .048 * radius);
+    outline.closePath();
+    const geometry = new THREE.ExtrudeGeometry(outline, {
+      depth: depth * .22, bevelEnabled: true, bevelSize: radius * .014,
+      bevelThickness: depth * .065, bevelSegments: 2, curveSegments: 9
+    });
+    for (let i = 0; i < 5; i++) {
+      const spoke = new THREE.Mesh(geometry, material);
+      spoke.rotation.z = i * Math.PI * 2 / 5;
+      spoke.position.z = -.3 * depth;
+      face.add(spoke);
+    }
+  }
+  return face;
+}
+
+function mountWheelDesigns(car) {
+  wheelFaces.length = 0;
+  for (const [faceId, metalId, side] of [[842, 854, 1], [880, 892, 1], [918, 930, -1], [962, 971, -1]]) {
+    const original = car.getObjectByName('Object_' + faceId);
+    const trim = car.getObjectByName('Object_' + metalId);
+    if (!original?.isMesh || !trim?.isMesh) continue;
+    original.geometry.computeBoundingBox();
+    const { min, max } = original.geometry.boundingBox;
+    const radius = Math.min(max.y - min.y, max.z - min.z) / 2;
+    const depth = max.x - min.x;
+    const material = original.material.clone();
+    wheelMaterials.push(material);
+    const variant = sportWheelFace(radius, depth, material);
+    variant.position.set(side > 0 ? max.x : min.x, (min.y + max.y) / 2, (min.z + max.z) / 2);
+    variant.rotateY(side * Math.PI / 2);
+    variant.visible = false;
+    original.add(variant);
+    // Put the replacement beside the original so visibility can switch independently.
+    original.parent.attach(variant);
+    wheelFaces.push({ original, trim, variant });
+  }
+  selectWheelDesign(wheelDesign);
+}
+
+function selectWheelDesign(design) {
+  wheelDesign = design;
+  const factory = design === 'factory';
+  for (const { original, trim, variant } of wheelFaces) {
+    original.visible = factory;
+    trim.visible = factory;
+    variant.visible = !factory;
+  }
+  setSelected('[data-wheel-design]', 'wheelDesign', design);
+  redraw = true;
+}
+
 function changeWheels(){
  const silver=state.wheel==='silver';
  for(const m of wheelMaterials){m.color.setHex(silver?0xb6bdc6:0x20262d);m.metalness=.78;m.roughness=silver?.29:.34;m.envMapIntensity=silver?1.2:.9;m.needsUpdate=true}
@@ -135,57 +216,156 @@ function configureLights() {
   illuminate(lightMeshes.low, 0xe1f2ff, low ? 2.5 : 0);
   illuminate(lightMeshes.rear, 0xff1628, state.rear ? 1.05 : 0);
   illuminate(lightMeshes.cabin, 0x58bdff, state.ambient ? 0.5 : 0);
-  for (const lamp of lights) lamp.intensity = low ? 16 : 0;
+  for (const lamp of lights) lamp.intensity = low ? 78 : 0;
   setSelected('[data-light]', 'light', state.light);
   setSelected('[data-signal]', 'signal', state.signal);
   $('#rearLight').classList.toggle('selected', state.rear);
   $('#interiorLight').classList.toggle('selected', state.ambient);
 }
+const engineRecording = './bmw-g80-fi-exhaust.b64';
 let audioContext;
+let recording;
 let activeEngine;
+let engineRequest = 0;
 
-function synthesizeEngine(context) {
-  const start = context.currentTime;
-  const oscillator = context.createOscillator();
-  const volume = context.createGain();
-  const filter = context.createBiquadFilter();
-
-  oscillator.type = 'sawtooth';
-  oscillator.frequency.setValueAtTime(31, start);
-  oscillator.frequency.exponentialRampToValueAtTime(75, start + .48);
-  oscillator.frequency.exponentialRampToValueAtTime(40, start + 1.55);
-  filter.type = 'lowpass';
-  filter.frequency.value = 230;
-  volume.gain.setValueAtTime(.0001, start);
-  volume.gain.exponentialRampToValueAtTime(.06, start + .14);
-  volume.gain.exponentialRampToValueAtTime(.025, start + 1.5);
-  oscillator.connect(filter).connect(volume).connect(context.destination);
-  oscillator.start();
-  return { oscillator, volume };
+function decodeEngineRecording(context) {
+  recording ??= fetch(engineRecording)
+    .then(response => {
+      if (!response.ok) throw new Error('BMW engine recording unavailable');
+      return response.text();
+    })
+    .then(encoded => Uint8Array.from(atob(encoded), character => character.charCodeAt(0)))
+    .then(bytes => context.decodeAudioData(bytes.buffer))
+    .catch(error => {
+      recording = undefined;
+      throw error;
+    });
+  return recording;
 }
 
-function engineSound(on) {
+async function engineSound(on) {
+  const request = ++engineRequest;
   if (!on) {
     if (!activeEngine) return;
-    const { oscillator, volume } = activeEngine;
+    const { source, volume } = activeEngine;
     activeEngine = null;
     const stop = audioContext.currentTime;
-    volume.gain.cancelScheduledValues(stop);
-    volume.gain.setTargetAtTime(.0001, stop, .038);
-    oscillator.stop(stop + .16);
+    volume.gain.setTargetAtTime(.0001, stop, .045);
+    source.stop(stop + .20);
     return;
   }
   const Audio = window.AudioContext || window.webkitAudioContext;
   if (!Audio) return;
   try {
     audioContext ??= new Audio();
-    activeEngine = synthesizeEngine(audioContext);
-    audioContext.resume().catch(error => console.warn('Web Audio:', error.message));
+    const [, buffer] = await Promise.all([audioContext.resume(), decodeEngineRecording(audioContext)]);
+    if (request !== engineRequest || !state.engine) return;
+    const source = audioContext.createBufferSource();
+    const volume = audioContext.createGain();
+    const now = audioContext.currentTime;
+    source.buffer = buffer;
+    source.loop = true;
+    source.loopStart = 3.36;
+    source.loopEnd = Math.min(5.47, buffer.duration);
+    volume.gain.setValueAtTime(.001, now);
+    volume.gain.linearRampToValueAtTime(.48, now + .10);
+    source.connect(volume).connect(audioContext.destination);
+    source.start();
+    activeEngine = { source, volume };
   } catch (error) {
-    console.warn('Web Audio:', error.message);
+    if (request !== engineRequest) return;
+    console.warn('BMW engine audio:', error.message);
+    $('#engineCaption').textContent = 'Приборы активны · запись звука недоступна';
   }
 }
-function toggleEngine(){state.engine=!state.engine;engineSound(state.engine);$('#digitalText').textContent=state.engine?'READY / P':'OFF';$('#rpmLevel').style.width=state.engine?'28%':'12%';$('#engineCaption').textContent=state.engine?'Двигатель запущен · приборы активны':'Система выключена';$$('[data-start-engine]').forEach(b=>b.classList.toggle('selected',state.engine));for(const m of lightMeshes.dash){m.emissive.setHex(state.engine?0x75bffc:0);m.emissiveIntensity=state.engine?.7:0}say(state.engine?'Двигатель запущен':'Двигатель выключен')}
+function toggleEngine(){state.engine=!state.engine;updateCockpit(state.engine);engineSound(state.engine);$('#digitalText').textContent=state.engine?'READY / P':'OFF';$('#rpmLevel').style.width=state.engine?'28%':'12%';$('#engineCaption').textContent=state.engine?'Двигатель запущен · приборы активны':'Система выключена';$$('[data-start-engine]').forEach(b=>b.classList.toggle('selected',state.engine));for(const m of lightMeshes.dash){m.emissive.setHex(state.engine?0x75bffc:0);m.emissiveIntensity=state.engine?.7:0}say(state.engine?'Двигатель запущен':'Двигатель выключен')}
+const cockpitCanvas = document.createElement('canvas');
+cockpitCanvas.width = 1024;
+cockpitCanvas.height = 256;
+const cockpitContext = cockpitCanvas.getContext('2d');
+const cockpitTexture = new THREE.CanvasTexture(cockpitCanvas);
+cockpitTexture.colorSpace = THREE.SRGBColorSpace;
+const cockpitMaterial = new THREE.MeshBasicMaterial({
+  map: cockpitTexture, transparent: true, alphaTest: .1, side: THREE.DoubleSide, toneMapped: false,
+  polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2
+});
+let cockpitTimer;
+
+function drawCockpit(mode) {
+  const ctx = cockpitContext;
+  ctx.clearRect(0, 0, 1024, 256);
+  ctx.fillStyle = '#05080e';
+  ctx.fillRect(0, 0, 518, 256);
+  if (mode === 'boot') {
+    const x = 268, y = 128, r = 59;
+    ctx.strokeStyle = '#e5edf5';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y, r, 0, 2 * Math.PI);
+    ctx.stroke();
+    for (let i = 0; i < 4; i++) {
+      ctx.fillStyle = i % 2 ? '#e7f3ff' : '#469bd7';
+      ctx.beginPath();
+      ctx.moveTo(x, y + 8);
+      ctx.arc(x, y + 8, 33, i * Math.PI / 2, (i + 1) * Math.PI / 2, false);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.fillStyle = '#edf5ff';
+    ctx.font = '600 17px system-ui';
+    ctx.textAlign = 'center';
+    ctx.fillText('B M W', x, y - 36);
+  }
+  if (mode === 'running') {
+    ctx.strokeStyle = '#659ac8';
+    ctx.lineWidth = 4;
+    for (const x of [107, 435]) {
+      ctx.beginPath();
+      ctx.arc(x, 127, 79, .74 * Math.PI, 1.79 * Math.PI);
+      ctx.stroke();
+    }
+    ctx.fillStyle = '#e8f1fa';
+    ctx.textAlign = 'center';
+    ctx.font = '500 86px system-ui';
+    ctx.fillText('0', 246, 146);
+    ctx.font = '500 22px system-ui';
+    ctx.fillText('км/ч', 246, 176);
+    ctx.fillText('P', 404, 155);
+    ctx.fillText('1.1 × 1000 об/мин', 260, 218);
+    ctx.fillStyle = '#55d498';
+    ctx.fillText('READY', 246, 49);
+  }
+  cockpitTexture.needsUpdate = true;
+  redraw = true;
+}
+
+function updateCockpit(on) {
+  clearTimeout(cockpitTimer);
+  drawCockpit(on ? 'boot' : 'off');
+  if (on) cockpitTimer = setTimeout(() => drawCockpit('running'), 950);
+}
+
+function mountCockpitDisplay(car) {
+  const screen = car.getObjectByName('Object_197');
+  if (!screen?.isMesh) return;
+  const geometry = screen.geometry.clone();
+  geometry.computeBoundingBox();
+  const { min, max } = geometry.boundingBox;
+  const positions = geometry.getAttribute('position');
+  const uv = new Float32Array(positions.count * 2);
+  for (let i = 0; i < positions.count; i++) {
+    uv[i * 2] = (max.x - positions.getX(i)) / (max.x - min.x);
+    uv[i * 2 + 1] = (positions.getY(i) - min.y) / (max.y - min.y);
+  }
+  geometry.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  const display = new THREE.Mesh(geometry, cockpitMaterial);
+  display.name = 'MERIDIAM_INSTRUMENT_DISPLAY';
+  display.position.z = -.003;
+  display.renderOrder = 3;
+  screen.add(display);
+  drawCockpit(state.engine ? 'running' : 'off');
+}
+
 // The source combines both sides and, in some meshes, fixed body parts in one material.
 const sharedDoorTrim = [
   'Object_37', 'Object_64', 'Object_76', 'Object_79', 'Object_204', 'Object_207',
@@ -301,6 +481,12 @@ function normalize(glb){if(carInner){carRoot.clear();carInner=null}paints.length
  if(/meridiam.*(seat bolsters|seat inserts)|seat_leather|alkantaraseat|seat_koga|seat_alc|int_paint3/i.test(name+' '+oname)){let clone=m.clone();clone.name='MERIDIAM_SEAT_'+o.name;clone.color.setHex(0x242931);clone.metalness=0;clone.roughness=.75;seatMaterials.push(clone);return clone}
  if(/g80_rim_|rim(_|[0-9])|rim_metal|rim_ring/.test(oname)&&!/brake|disc|tyre|tire|rim_badge|rim_m_badge|rim_logo|nipel|screws/i.test(oname)){let clone=m.clone();clone.name='MERIDIAM_RIM_'+o.name;clone.map=null;clone.metalness=.78;clone.roughness=.34;wheelMaterials.push(clone);return clone}
  if(kind){let clone=m.clone();clone.emissive=new THREE.Color(0);clone.emissiveIntensity=0;lightMeshes[kind].push(clone);if(kind==='blink'||kind==='drl')blinkSideMap.set(clone,/_r_|right|_rf_/.test(oname)?'right':'left');if(kind==='dash')clone.emissiveMap=clone.map;return clone}
+ if (/int_leather|int_plastic|int_carbon/.test(oname) && oname.includes('steer_hr')) {
+   const trim = m.clone();
+   trim.color.multiplyScalar(.20);
+   trim.roughness = Math.max(trim.roughness, .58);
+   return trim;
+ }
  if (!m.map && m.color.r > .55 && /cockpit|volan|interior|console|roofinside/.test(oname)) {
    const trim = m.clone();
    trim.color.setHex(0x25292e);
@@ -320,6 +506,8 @@ function normalize(glb){if(carInner){carRoot.clear();carInner=null}paints.length
  }
  carRoot.updateMatrixWorld(true);
  attachDoorTrim(car);
+ mountCockpitDisplay(car);
+ mountWheelDesigns(car);
  // Mount the factory lip and its wider derivative to the animated trunk hinge.
  if (originalWing && pivots.MERIDIAM_RIG_TRUNK_LID) {
    const hinge = pivots.MERIDIAM_RIG_TRUNK_LID;
@@ -332,7 +520,7 @@ function normalize(glb){if(carInner){carRoot.clear();carInner=null}paints.length
  }
  // Actual light beam originates near the original headlights, moves with model.
  lights.forEach(l=>l.parent?.remove(l));lights.length=0;
- for(const x of [-.78,.78]){const lamp=new THREE.SpotLight(0xd3edff,0,15,Math.PI/8,.66,2);lamp.position.set(x,-.055,2.45);lamp.target.position.set(x,-.92,9);carRoot.add(lamp,lamp.target);lights.push(lamp)}
+ for(const x of [-.78,.78]){const lamp=new THREE.SpotLight(0xe7f2ff,0,18,Math.PI/10,.53,2);lamp.position.set(x,-.055,2.45);lamp.target.position.set(x*1.35,-.96,8.4);carRoot.add(lamp,lamp.target);lights.push(lamp)}
  // Surface names and selectables present in the real asset.
  changeColor();changeWheels();changeSeat();changeSpoiler();configureLights();
  isLoaded=true;redraw=true;$('#loader').classList.add('hidden');say('BMW загружена · '+nodes+' узлов');setTab('config');setView('hero');resize();
@@ -340,6 +528,7 @@ function normalize(glb){if(carInner){carRoot.clear();carInner=null}paints.length
    window.__MERIDIAM_QA = () => ({
      paint: paints.map(m => [m.color.getHex(), m.roughness, m.clearcoat]),
      rims: wheelMaterials.map(m => m.color.getHex()),
+     wheelDesigns: wheelFaces.map(({ original, variant }) => [original.visible, variant.visible]),
      seats: seatMaterials.map(m => [m.color.getHex(), m.roughness]),
      lamps: Object.fromEntries(Object.entries(lightMeshes).map(([kind, list]) =>
        [kind, list.map(m => [m.emissiveIntensity, blinkSideMap.get(m) ?? null])])),
@@ -348,6 +537,7 @@ function normalize(glb){if(carInner){carRoot.clear();carInner=null}paints.length
      hinges: Object.fromEntries(Object.entries(pivots).map(([name, node]) =>
        [name, { angles: node.rotation.toArray().slice(0, 3), pivot: node.getWorldPosition(new THREE.Vector3()).toArray(), meshes: new THREE.Box3().setFromObject(node).getCenter(new THREE.Vector3()).toArray() }])),
      camera: camera.position.toArray(),
+     gaze: lookTarget.toArray(),
      trim: Object.fromEntries(['fr', 'rl'].map(part => {
        const hinge = pivots[openingRig[part]];
        return [part, hinge.children.filter(node => node.name.endsWith('_trim_' + part)).map(node => ({
@@ -359,9 +549,8 @@ function normalize(glb){if(carInner){carRoot.clear();carInner=null}paints.length
      drawCalls: renderer.info.render.calls
    });
    window.__MERIDIAM_AUDIO_QA = async () => {
-     const offline = new OfflineAudioContext(1, 16000, 16000);
-     synthesizeEngine(offline);
-     const samples = (await offline.startRendering()).getChannelData(0);
+     if (!audioContext) throw new Error('Start the engine before checking the recording');
+     const samples = (await decodeEngineRecording(audioContext)).getChannelData(0);
      return Math.sqrt(samples.reduce((sum, sample) => sum + sample * sample, 0) / samples.length);
    };
  }
@@ -518,28 +707,78 @@ function setTab(tab){state.tab=tab;const titles={overview:'Управление'
 function setView(key){doorFocus=null;state.interior=null;state.view=key;const headOn=Math.atan2(4.30,8.45);const angles={hero:headOn+.79,front:headOn,side:headOn-Math.PI/2,rear:headOn-Math.PI};state.rotation=angles[key]??angles.hero;state.zoom=1;state.auto=false;$('#rotation').classList.remove('selected');setSelected('[data-view]','view',key)}
 // Cabin anchors are in the normalized model's coordinates; +X is the driver side.
 const cabinViews = {
-  driver: [[.46,.47,-.34], [.10,.02,1.05]],
+  driver: [[.46,.51,-.35], [.10,.03,1.05]],
   passenger: [[-.46,.43,.07], [-.28,.15,1.55]],
-  rear: [[.24,.42,-1.21], [.02,.25,.72]]
+  rear: [[.05,.46,-1.24], [.02,.18,.72]]
 };
 const cabinEye = new THREE.Vector3();
 const cabinFocus = new THREE.Vector3();
+const cabinDirection = new THREE.Spherical();
+const cabinLook = { yaw: 0, pitch: 0 };
 
 function setCabin(which) {
   state.interior = which;
+  cabinLook.yaw = 0;
+  cabinLook.pitch = 0;
   state.rotation = 0;
+  turnVelocity = 0;
+  state.auto = false;
+  $('#rotation').classList.remove('selected');
   setSelected('[data-cabin]', 'cabin', which);
   closeDoors();
-  $('#hint').textContent = 'Осмотр салона · выберите ракурс';
+  $('#hint').textContent = 'Перетаскивайте, чтобы осмотреть салон';
 }
 $$('[data-tab]').forEach(b=>b.onclick=()=>setTab(b.dataset.tab));$$('[data-view]').forEach(b=>b.onclick=()=>{setTab('overview');setView(b.dataset.view)});$$('[data-cabin]').forEach(b=>b.onclick=()=>setCabin(b.dataset.cabin));$$('[data-color]').forEach(b=>b.onclick=()=>{state.color=b.dataset.color;changeColor()});$$('[data-finish]').forEach(b=>b.onclick=()=>{state.finish=b.dataset.finish;changeColor()});$$('[data-wheel]').forEach(b=>b.onclick=()=>{state.wheel=b.dataset.wheel;changeWheels()});$$('[data-seat]').forEach(b=>b.onclick=()=>{state.seat=b.dataset.seat;changeSeat()});$$('[data-spoiler]').forEach(b=>b.onclick=()=>{state.spoiler=b.dataset.spoiler;changeSpoiler()});$$('[data-part]').forEach(b=>b.onclick=()=>toggleDoor(b.dataset.part));$$('[data-start-engine]').forEach(b=>b.onclick=toggleEngine);$$('[data-light]').forEach(b=>b.onclick=()=>{state.light=b.dataset.light;configureLights()});$$('[data-signal]').forEach(b=>b.onclick=()=>{state.signal=b.dataset.signal;configureLights()});$('#rearLight').onclick=()=>{state.rear=!state.rear;configureLights()};$('#interiorLight').onclick=()=>{state.ambient=!state.ambient;configureLights()};$('#closeAll').onclick=closeDoors;$('#rotation').onclick=()=>{state.auto=!state.auto;$('#rotation').classList.toggle('selected',state.auto)};$('#resetView').onclick=()=>{setTab('overview');setView('hero')};
+$$('[data-wheel-design]').forEach(button => button.onclick = () => selectWheelDesign(button.dataset.wheelDesign));
 for(const k of Object.keys(state.targetDoors))$('#spot-'+k).onclick=()=>toggleDoor(k);
 $('#contact').onclick=()=>$('#contactModal').classList.remove('hidden');$('#closeContact').onclick=()=>$('#contactModal').classList.add('hidden');$('#copyRequest').onclick=async()=>{const msg='Здравствуйте! Хочу обсудить разработку интерактивного 3D-шоурума/конфигуратора для нашей компании.';try{await navigator.clipboard.writeText(msg);say('Текст заявки скопирован')}catch{prompt('Скопируйте текст заявки:',msg)}};
 // Interaction rotates the car and podium, not the room or camera; never crosses the floor.
-let dragging=false,px=0,py=0,downX=0,downY=0;
-renderer.domElement.addEventListener('pointerdown',e=>{if(!isLoaded||state.interior)return;dragging=true;px=e.clientX;py=e.clientY;downX=px;downY=py;renderer.domElement.setPointerCapture(e.pointerId)});
-renderer.domElement.addEventListener('pointermove',e=>{if(dragging){state.rotation+=(e.clientX-px)*.0067;px=e.clientX;py=e.clientY}});
-renderer.domElement.addEventListener('pointerup',e=>{dragging=false});renderer.domElement.addEventListener('pointercancel',()=>dragging=false);
+const surface = renderer.domElement;
+let activePointer = null;
+let lastX = 0;
+let lastY = 0;
+let lastMove = 0;
+let turnVelocity = 0;
+
+surface.addEventListener('pointerdown', event => {
+  if (!isLoaded || activePointer !== null || event.button !== 0) return;
+  activePointer = event.pointerId;
+  lastX = event.clientX;
+  lastY = event.clientY;
+  lastMove = event.timeStamp;
+  turnVelocity = 0;
+  state.auto = false;
+  $('#rotation').classList.remove('selected');
+  surface.setPointerCapture(event.pointerId);
+});
+surface.addEventListener('pointermove', event => {
+  if (activePointer !== event.pointerId) return;
+  const dx = event.clientX - lastX;
+  const dy = event.clientY - lastY;
+  if (state.interior) {
+    cabinLook.yaw = THREE.MathUtils.clamp(cabinLook.yaw - dx * .005, -1.95, 1.95);
+    cabinLook.pitch = THREE.MathUtils.clamp(cabinLook.pitch + dy * .0045, -.48, .64);
+  } else {
+    state.rotation += dx * .0067;
+    const seconds = Math.max(.012, (event.timeStamp - lastMove) / 1000);
+    turnVelocity = THREE.MathUtils.clamp(dx * .0067 / seconds, -3.2, 3.2);
+  }
+  lastX = event.clientX;
+  lastY = event.clientY;
+  lastMove = event.timeStamp;
+});
+function finishDrag(event) {
+  if (activePointer !== event.pointerId) return;
+  activePointer = null;
+  if (event.type === 'pointerup' && !state.interior && !reducedMotion.matches &&
+      event.timeStamp - lastMove < 90) {
+    state.rotation += turnVelocity * .14;
+  }
+  turnVelocity = 0;
+}
+surface.addEventListener('pointerup', finishDrag);
+surface.addEventListener('pointercancel', finishDrag);
+surface.addEventListener('lostpointercapture', finishDrag);
 function changeExteriorZoom(amount) {
   if (!isLoaded || state.interior) return;
   const closest = doorFocus ? .7 : .55;
@@ -580,7 +819,14 @@ function animate(now) {
  if (state.interior) {
    const [eye, focus] = cabinViews[state.interior];
    desiredCam.copy(carRoot.localToWorld(cabinEye.fromArray(eye)));
-   desiredLook.copy(carRoot.localToWorld(cabinFocus.fromArray(focus)));
+   cabinEye.fromArray(eye);
+   cabinFocus.fromArray(focus).sub(cabinEye);
+   cabinDirection.setFromVector3(cabinFocus);
+   cabinDirection.theta += cabinLook.yaw;
+   cabinDirection.phi += cabinLook.pitch;
+   cabinDirection.makeSafe();
+   cabinFocus.setFromSpherical(cabinDirection).add(cabinEye);
+   desiredLook.copy(carRoot.localToWorld(cabinFocus));
  } else if (doorFocus) {
    const distance = state.zoom * Math.max(1, .93 / camera.aspect);
    const side = doorFocus === 'rl' ? 1 : -1;
@@ -592,11 +838,12 @@ function animate(now) {
    desiredCam.set(4.30 * distance, 2.32 * distance, 8.45 * distance);
    desiredLook.set(-.65, 1.03, 0);
  }
- const damping = 1 - Math.exp(-7 * dt);
+ const damping = reducedMotion.matches ? 1 : 1 - Math.exp(-8 * dt);
  const roomMoving = Math.abs(carRoot.rotation.y - angleBefore) > .00005 || movingHinge;
  const cameraMoving = camera.position.distanceToSquared(desiredCam) > .00001 ||
    lookTarget.distanceToSquared(desiredLook) > .00001;
  camera.fov = THREE.MathUtils.lerp(camera.fov, state.interior === 'driver' ? (camera.aspect < .8 ? 80 : 69) : state.interior ? (camera.aspect < .8 ? 73 : 62) : 34, damping);
+ camera.filmOffset = THREE.MathUtils.lerp(camera.filmOffset, state.interior ? 0 : (innerWidth > 900 ? 3.2 : 0), damping);
  camera.updateProjectionMatrix();
  camera.position.lerp(desiredCam, damping);
  lookTarget.lerp(desiredLook, damping);
