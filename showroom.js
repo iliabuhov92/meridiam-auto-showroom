@@ -120,7 +120,7 @@ function closeDoors() {
   doorFocus = null;
   updateDoorButtons();
 }
-function angularTarget(p,v){const signs={fl:-1,fr:1,rl:-1,rr:1};return p==='trunk'?v*.88:(signs[p]||1)*v*.67}
+function angularTarget(p,v){const signs={fl:-1,fr:1,rl:-1,rr:1};return p==='trunk'?v*.88:(signs[p]||1)*v*(p[0]==='f'?.96:.88)}
 // Light effects target actual original GLB lenses; original albedo, opacity and geometry are retained.
 function illuminate(materials, color, intensity) {
   for (const material of materials) {
@@ -186,14 +186,44 @@ function engineSound(on) {
   }
 }
 function toggleEngine(){state.engine=!state.engine;engineSound(state.engine);$('#digitalText').textContent=state.engine?'READY / P':'OFF';$('#rpmLevel').style.width=state.engine?'28%':'12%';$('#engineCaption').textContent=state.engine?'Двигатель запущен · приборы активны':'Система выключена';$$('[data-start-engine]').forEach(b=>b.classList.toggle('selected',state.engine));for(const m of lightMeshes.dash){m.emissive.setHex(state.engine?0x75bffc:0);m.emissiveIntensity=state.engine?.7:0}say(state.engine?'Двигатель запущен':'Двигатель выключен')}
-// This export packs trim from multiple doors into shared indexed meshes.
-const sharedDoorTrim = ['Object_37', 'Object_64', 'Object_79', 'Object_223', 'Object_232', 'Object_1063'];
+// The source combines both sides and, in some meshes, fixed body parts in one material.
+const sharedDoorTrim = [
+  'Object_37', 'Object_64', 'Object_76', 'Object_79', 'Object_204', 'Object_207',
+  'Object_223', 'Object_232', 'Object_1063', 'Object_1104', 'Object_1107', 'Object_1482'
+];
+
+function doorForIsland(name, { min, max }) {
+  const x = (min.x + max.x) / 2;
+  const z = (min.z + max.z) / 2;
+  // Rear glazing shares the mesh with the hatch-side backlight.
+  if (name === 'Object_207' || name === 'Object_1107') {
+    return max.z < -1.3 && min.z < -1.6 ? 'fixed' : x > 0 ? 'rl' : 'rr';
+  }
+  // The outer trim includes the stationary A/C-pillar covers. The mirror feet
+  // are separate islands and follow their respective front doors.
+  if (name === 'Object_1482' && (min.z < -1.55 || (min.z > .2 && max.z > .9))) {
+    return 'fixed';
+  }
+  if (Math.abs(x) < .69 || ((name === 'Object_223' || name === 'Object_64') && min.z > .55)) {
+    return 'fixed';
+  }
+  return (z < -.28 ? 'r' : 'f') + (x > 0 ? 'l' : 'r');
+}
 
 function attachDoorTrim(car) {
-  const position = new THREE.Vector3();
-  const boundsPoint = new THREE.Vector3();
+  const point = new THREE.Vector3();
   carRoot.updateMatrixWorld(true);
   const toCar = carRoot.matrixWorld.clone().invert();
+  for (const [part, names] of Object.entries({
+    fl: ['melkatpidr_819', 'HarmanKardonLogoDriverDoor_261'],
+    fr: ['pidtik2_874'],
+    rl: ['HarmanKardonLogoDriverDoorRear_283']
+  })) {
+    for (const name of names) {
+      const node = car.getObjectByName(name);
+      if (node) pivots[openingRig[part]].attach(node);
+    }
+  }
   for (const name of sharedDoorTrim) {
     const mesh = car.getObjectByName(name);
     if (!mesh?.isMesh || !mesh.geometry.index) continue;
@@ -201,20 +231,39 @@ function attachDoorTrim(car) {
     const vertices = geometry.getAttribute('position');
     const index = geometry.index.array;
     const transform = toCar.clone().multiply(mesh.matrixWorld);
-    const groups = { fl: [], fr: [], rl: [], rr: [], fixed: [] };
-    // Classify the disjoint card islands by their position in the closed car.
-    // The dashboard and central tunnel stay on the body.
+    const links = Array.from({ length: vertices.count }, (_, i) => i);
+    const root = i => {
+      while (links[i] !== i) {
+        links[i] = links[links[i]];
+        i = links[i];
+      }
+      return i;
+    };
+    const join = (a, b) => { links[root(a)] = root(b); };
+    // Treat vertices duplicated at UV and normal seams as connected.
+    const equivalent = new Map();
+    for (let i = 0; i < vertices.count; i++) {
+      point.fromBufferAttribute(vertices, i).applyMatrix4(transform);
+      const key = [point.x, point.y, point.z].map(value => Math.round(value * 1e5)).join(',');
+      if (equivalent.has(key)) join(i, equivalent.get(key));
+      else equivalent.set(key, i);
+    }
     for (let i = 0; i < index.length; i += 3) {
-      position.fromBufferAttribute(vertices, index[i]);
-      position.add(boundsPoint.fromBufferAttribute(vertices, index[i + 1]));
-      position.add(boundsPoint.fromBufferAttribute(vertices, index[i + 2]));
-      position.multiplyScalar(1 / 3).applyMatrix4(transform);
-      const side = position.x > 0 ? 'l' : 'r';
-      const row = position.z < -.28 ? 'r' : 'f';
-      const central = Math.abs(position.x) < .69;
-      const dashboard = name === 'Object_223' && position.z > .57;
-      const fixed = central || dashboard || (name === 'Object_64' && position.z > .58 && Math.abs(position.x) < .73);
-      groups[fixed ? 'fixed' : row + side].push(index[i], index[i + 1], index[i + 2]);
+      join(index[i], index[i + 1]);
+      join(index[i], index[i + 2]);
+    }
+    const islands = new Map();
+    for (const vertex of index) {
+      const id = root(vertex);
+      if (!islands.has(id)) islands.set(id, { indices: [], bounds: new THREE.Box3() });
+      const island = islands.get(id);
+      island.indices.push(vertex);
+      island.bounds.expandByPoint(point.fromBufferAttribute(vertices, vertex).applyMatrix4(transform));
+    }
+    const groups = { fl: [], fr: [], rl: [], rr: [], fixed: [] };
+    for (const { indices, bounds } of islands.values()) {
+      const output = groups[doorForIsland(name, bounds)];
+      for (const vertex of indices) output.push(vertex);
     }
     for (const [part, indices] of Object.entries(groups)) {
       if (!indices.length) continue;
@@ -222,7 +271,7 @@ function attachDoorTrim(car) {
       for (const [attribute, data] of Object.entries(geometry.attributes)) piece.setAttribute(attribute, data);
       piece.setIndex(indices);
       piece.boundingBox = new THREE.Box3();
-      for (const index of indices) piece.boundingBox.expandByPoint(boundsPoint.fromBufferAttribute(vertices, index));
+      for (const index of indices) piece.boundingBox.expandByPoint(point.fromBufferAttribute(vertices, index));
       piece.boundingSphere = piece.boundingBox.getBoundingSphere(new THREE.Sphere());
       const trim = new THREE.Mesh(piece, mesh.material);
       trim.name = name + '_trim_' + part;
