@@ -335,43 +335,99 @@ async function loadInteractiveModel(bytes) {
   normalize(glb);
 }
 
+async function downloadPackedModel(prefix) {
+  const manifest = await fetch(prefix + '.json');
+  if (!manifest.ok) throw new Error('Нет списка частей модели.');
+  const { lengths } = await manifest.json();
+  if (!Array.isArray(lengths) || lengths.length < 1 || lengths.length > 32 ||
+      lengths.some(length => !Number.isInteger(length) || length < 1 || length > 4 * 1024 * 1024)) {
+    throw new Error('Некорректный список частей модели.');
+  }
+  const total = lengths.reduce((sum, length) => sum + length, 0);
+  const parts = new Array(lengths.length);
+  let next = 0;
+  let downloaded = 0;
+  async function downloadParts() {
+    while (next < lengths.length) {
+      const index = next++;
+      const url = prefix + '-' + index + '.bin';
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          const response = await fetch(url, {
+            cache: attempt ? 'reload' : 'default',
+            signal: AbortSignal.timeout(120_000)
+          });
+          if (!response.ok) throw new Error('Часть модели недоступна.');
+          const bytes = await response.arrayBuffer();
+          if (bytes.byteLength !== lengths[index]) throw new Error('Часть модели скачалась не полностью.');
+          parts[index] = bytes;
+          downloaded += bytes.byteLength;
+          $('#progress').style.width = (downloaded / total * 100) + '%';
+          $('#status').textContent = 'Загрузка BMW: ' + (downloaded / 1e6).toFixed(1) + ' из ' + (total / 1e6).toFixed(1) + ' МБ';
+          break;
+        } catch (error) {
+          if (attempt === 2) throw error;
+        }
+      }
+    }
+  }
+  const workers = await Promise.allSettled(Array.from({ length: Math.min(4, lengths.length) }, downloadParts));
+  const failure = workers.find(worker => worker.status === 'rejected');
+  if (failure) throw failure.reason;
+  $('#status').textContent = 'Распаковываем BMW…';
+  const decoded = new Blob(parts).stream().pipeThrough(new DecompressionStream('gzip'));
+  return new Response(decoded).arrayBuffer();
+}
+
+async function verifyHostedModel(bytes) {
+  if (!globalThis.crypto?.subtle) return bytes;
+  const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
+  const actual = Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join('');
+  if (actual !== modelHash) throw new Error('Загруженный файл BMW не прошёл проверку.');
+  return bytes;
+}
+
+const retryDownload = document.createElement('button');
+retryDownload.type = 'button';
+retryDownload.className = 'action hidden';
+retryDownload.textContent = 'Повторить загрузку BMW';
+retryDownload.onclick = () => autoload();
+$('#status').after(retryDownload);
+
 async function autoload() {
   if (!location.protocol.startsWith('http')) {
     $('#status').textContent = 'Выбери bmw_m3_g80_meridiam.glb из архива шоурума';
     return;
   }
+  retryDownload.classList.add('hidden');
   filePicker.classList.add('hidden');
   fileInput.disabled = true;
-  const modelUrl = './bmw_m3_g80_meridiam.glb?v=' + modelHash.slice(0, 12);
+  $('#status').textContent = 'Подключаемся к загрузке BMW…';
+  $('#progress').style.width = '0%';
+  const version = modelHash.slice(0, 12);
   try {
-    const response = await fetch(modelUrl);
-    if (!response.ok) throw new Error('Сайт не смог скачать модель BMW.');
-    const total = Number(response.headers.get('Content-Length')) || 0;
     let bytes;
-    if (response.body) {
-      let downloaded = 0;
-      const tracked = response.body.pipeThrough(new TransformStream({
-        transform(chunk, controller) {
-          downloaded += chunk.byteLength;
-          if (total) $('#progress').style.width = Math.min(100, downloaded / total * 100) + '%';
-          $('#status').textContent = 'Загрузка BMW: ' + (downloaded / 1e6).toFixed(1) + ' МБ';
-          controller.enqueue(chunk);
-        }
-      }));
-      bytes = await new Response(tracked).arrayBuffer();
-    } else {
-      bytes = await response.arrayBuffer();
+    if (typeof DecompressionStream !== 'undefined') {
+      try {
+        bytes = await verifyHostedModel(await downloadPackedModel('./bmw-' + version));
+      } catch (error) {
+        console.warn('BMW packed download:', error.message);
+        $('#status').textContent = 'Пробуем резервную загрузку BMW…';
+        $('#progress').style.width = '0%';
+      }
     }
-    if (globalThis.crypto?.subtle) {
-      const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
-      const actual = Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join('');
-      if (actual !== modelHash) throw new Error('Сайт получил другую версию BMW. Обнови страницу или выбери GLB из архива шоурума.');
+    if (!bytes) {
+      const response = await fetch('./bmw_m3_g80_meridiam.glb?v=' + version, { cache: 'reload' });
+      if (!response.ok) throw new Error('Сайт не смог скачать модель BMW.');
+      bytes = await verifyHostedModel(await response.arrayBuffer());
     }
     await loadInteractiveModel(bytes);
   } catch (error) {
+    console.warn('BMW download:', error.message);
     fileInput.disabled = false;
     filePicker.classList.remove('hidden');
-    $('#status').textContent = error.message;
+    retryDownload.classList.remove('hidden');
+    $('#status').textContent = 'Связь прервалась. Повтори загрузку или выбери GLB из архива шоурума.';
   }
 }
 
@@ -379,6 +435,7 @@ fileInput.addEventListener('change', async event => {
   const file = event.target.files[0];
   if (!file) return;
   fileInput.disabled = true;
+  retryDownload.disabled = true;
   $('#status').textContent = 'Чтение ' + (file.size / 1e6).toFixed(1) + ' МБ…';
   try {
     await loadInteractiveModel(await file.arrayBuffer());
@@ -387,6 +444,7 @@ fileInput.addEventListener('change', async event => {
     fileInput.value = '';
   } finally {
     fileInput.disabled = false;
+    retryDownload.disabled = false;
   }
 });
 autoload();
