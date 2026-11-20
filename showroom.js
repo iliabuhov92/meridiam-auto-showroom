@@ -16,11 +16,11 @@ softbox(95,170,140,590,.95);softbox(440,145,420,130,.96);softbox(1090,145,150,57
 const environment=new THREE.CanvasTexture(env);environment.mapping=THREE.EquirectangularReflectionMapping;environment.colorSpace=THREE.SRGBColorSpace;
 const pmrem=new THREE.PMREMGenerator(renderer),envRT=pmrem.fromEquirectangular(environment);scene.environment=envRT.texture;scene.environmentIntensity=1.05;environment.dispose();pmrem.dispose();
 scene.add(new THREE.HemisphereLight(0xc9e5fd,0x151b25,.82));
-RectAreaLightUniformsLib.init();function area(x,y,z,w,h,intensity,color){let l=new THREE.RectAreaLight(color,intensity,w,h);l.position.set(x,y,z);l.lookAt(0,1,0);scene.add(l)}area(-4.5,5,3.5,5,5,2.5,0xdcefff);area(4,4.8,-3.7,4,6,3.1,0xf4f8ff);area(0,7,1,10,2.6,2.25,0xd7edff);
+RectAreaLightUniformsLib.init();function area(x,y,z,w,h,intensity,color){let l=new THREE.RectAreaLight(color,intensity,w,h);l.position.set(x,y,z);l.lookAt(0,1,0);scene.add(l)}area(-4.5,5,3.5,5,5,2.5,0xdcefff);area(4,4.8,-3.7,4,6,3.1,0xf4f8ff);area(0,7,1,10,2.6,2.25,0xd7edff);area(5.2,2.1,4.7,4.5,1.8,1.2,0xf4f6ff);
 const key=new THREE.DirectionalLight(0xe6f3ff,1.3);key.position.set(-5.3,9,6);key.castShadow=true;key.shadow.mapSize.set(1024,1024);key.shadow.camera.left=-9;key.shadow.camera.right=9;key.shadow.camera.top=9;key.shadow.camera.bottom=-9;key.shadow.bias=-.0003;scene.add(key);
 const rimLight=new THREE.DirectionalLight(0xb2dbff,1.25);rimLight.position.set(5,6,-4);scene.add(rimLight);
 const mat=(hex,metalness=0,roughness=.5)=>new THREE.MeshStandardMaterial({color:hex,metalness,roughness});
-const floor=new THREE.Mesh(new THREE.PlaneGeometry(90,90),mat(0x0c1118,.56,.32));floor.rotation.x=-Math.PI/2;floor.position.y=-.055;floor.receiveShadow=true;scene.add(floor);
+const floor=new THREE.Mesh(new THREE.PlaneGeometry(90,90),mat(0x141b24,.41,.37));floor.rotation.x=-Math.PI/2;floor.position.y=-.055;floor.receiveShadow=true;scene.add(floor);
 const podium=new THREE.Group();podium.position.x=-.70;scene.add(podium);const base=new THREE.Mesh(new THREE.CylinderGeometry(3.67,3.7,.25,128),mat(0x0b131d,.52,.3));base.position.y=.06;base.receiveShadow=true;podium.add(base);const upper=new THREE.Mesh(new THREE.CylinderGeometry(3.66,3.66,.012,128),mat(0x121923,.42,.38));upper.position.y=.192;upper.receiveShadow=true;podium.add(upper);const ring=new THREE.Mesh(new THREE.TorusGeometry(3.665,.016,10,160),new THREE.MeshBasicMaterial({color:0xa2dbff}));ring.rotation.x=-Math.PI/2;ring.position.y=.204;podium.add(ring);const ringHalo=new THREE.Mesh(new THREE.TorusGeometry(3.69,.032,6,160),new THREE.MeshBasicMaterial({color:0x244a67,transparent:true,opacity:.4}));ringHalo.rotation.x=-Math.PI/2;ringHalo.position.y=.192;podium.add(ringHalo);
 const wallMat=mat(0x171b23,.44,.56);function wall(x,y,z,w,h,ry){let mesh=new THREE.Mesh(new THREE.PlaneGeometry(w,h),wallMat);mesh.position.set(x,y,z);mesh.rotation.y=ry;scene.add(mesh)}wall(0,4,-13,29,9,0);wall(-13.8,4,0,25,9,Math.PI/2);wall(13.8,4,0,25,9,-Math.PI/2);
 for(let x=-12;x<=12;x+=3.4){let p=new THREE.Mesh(new THREE.BoxGeometry(.075,8,.1),mat(0x30475b,.55,.4));p.position.set(x,4,-12.86);scene.add(p);let line=new THREE.Mesh(new THREE.BoxGeometry(.026,6.9,.055),new THREE.MeshBasicMaterial({color:0x397298}));line.position.set(x+.12,4,-12.78);scene.add(line)}
@@ -216,7 +216,7 @@ function configureLights() {
   illuminate(lightMeshes.low, 0xe1f2ff, low ? 2.5 : 0);
   illuminate(lightMeshes.rear, 0xff1628, state.rear ? 1.05 : 0);
   illuminate(lightMeshes.cabin, 0x58bdff, state.ambient ? 0.5 : 0);
-  for (const lamp of lights) lamp.intensity = low ? 78 : 0;
+  for (const lamp of lights) lamp.intensity = low ? 112 : 0;
   setSelected('[data-light]', 'light', state.light);
   setSelected('[data-signal]', 'signal', state.signal);
   $('#rearLight').classList.toggle('selected', state.rear);
@@ -520,7 +520,7 @@ function normalize(glb){if(carInner){carRoot.clear();carInner=null}paints.length
  }
  // Actual light beam originates near the original headlights, moves with model.
  lights.forEach(l=>l.parent?.remove(l));lights.length=0;
- for(const x of [-.78,.78]){const lamp=new THREE.SpotLight(0xe7f2ff,0,18,Math.PI/10,.53,2);lamp.position.set(x,-.055,2.45);lamp.target.position.set(x*1.35,-.96,8.4);carRoot.add(lamp,lamp.target);lights.push(lamp)}
+ for(const x of [-.78,.78]){const lamp=new THREE.SpotLight(0xe7f2ff,0,13,Math.PI/12,.48,2);lamp.position.set(x,-.055,2.45);lamp.target.position.set(x*1.45,-.81,6.25);carRoot.add(lamp,lamp.target);lights.push(lamp)}
  // Surface names and selectables present in the real asset.
  changeColor();changeWheels();changeSeat();changeSpoiler();configureLights();
  isLoaded=true;redraw=true;$('#loader').classList.add('hidden');say('BMW загружена · '+nodes+' узлов');setTab('config');setView('hero');resize();
@@ -558,7 +558,8 @@ function normalize(glb){if(carInner){carRoot.clear();carInner=null}paints.length
 }
 const fileInput = $('#fileInput');
 const filePicker = fileInput.closest('label');
-const modelHash = '7229ea2876f2497f779574e3e094c4ad97b94eaad941cbca6975411560e68ea9';
+const legacyModelHash = '7229ea2876f2497f779574e3e094c4ad97b94eaad941cbca6975411560e68ea9';
+const modelHash = 'cce610a1f3dd9e5b3059100bff186d6fb6b6d21976d42e4b4727f639dcf83de0';
 const loader = new GLTFLoader();
 
 async function loadInteractiveModel(bytes) {
@@ -576,7 +577,7 @@ async function loadInteractiveModel(bytes) {
 async function downloadPackedModel(prefix) {
   const manifest = await fetch(prefix + '.json');
   if (!manifest.ok) throw new Error('Нет списка частей модели.');
-  const { lengths } = await manifest.json();
+  const { lengths, lanes, byteLength } = await manifest.json();
   if (!Array.isArray(lengths) || lengths.length < 1 || lengths.length > 32 ||
       lengths.some(length => !Number.isInteger(length) || length < 1 || length > 4 * 1024 * 1024)) {
     throw new Error('Некорректный список частей модели.');
@@ -631,14 +632,32 @@ async function downloadPackedModel(prefix) {
   }
   $('#status').textContent = 'Распаковываем BMW…';
   const decoded = new Blob(parts).stream().pipeThrough(new DecompressionStream('gzip'));
-  return new Response(decoded).arrayBuffer();
+  const restored = await new Response(decoded).arrayBuffer();
+  if (restored.byteLength !== byteLength || !Array.isArray(lanes) || lanes.length > 16) {
+    throw new Error('Неверный формат компактной модели.');
+  }
+  const bytes = new Uint8Array(restored);
+  let end = 0;
+  for (const { start, count, stride } of lanes) {
+    if (!Number.isSafeInteger(start) || !Number.isSafeInteger(count) ||
+        count < 1 || (stride !== 2 && stride !== 4) || start < end ||
+        start + count * stride > bytes.length) {
+      throw new Error('Неверная разметка геометрии BMW.');
+    }
+    end = start + count * stride;
+    const stream = bytes.slice(start, end);
+    for (let lane = 0; lane < stride; lane++) {
+      for (let i = 0; i < count; i++) bytes[start + i * stride + lane] = stream[lane * count + i];
+    }
+  }
+  return restored;
 }
 
-async function verifyHostedModel(bytes) {
+async function verifyHostedModel(bytes, acceptLegacy = false) {
   if (!globalThis.crypto?.subtle) return bytes;
   const digest = new Uint8Array(await crypto.subtle.digest('SHA-256', bytes));
   const actual = Array.from(digest, byte => byte.toString(16).padStart(2, '0')).join('');
-  if (actual !== modelHash) throw new Error('Загруженный файл BMW не прошёл проверку.');
+  if (actual !== modelHash && (!acceptLegacy || actual !== legacyModelHash)) throw new Error('Загруженный файл BMW не прошёл проверку.');
   return bytes;
 }
 
@@ -664,7 +683,7 @@ async function autoload() {
     let bytes;
     if (typeof DecompressionStream !== 'undefined') {
       try {
-        bytes = await verifyHostedModel(await downloadPackedModel('./bmw-' + version));
+        bytes = await verifyHostedModel(await downloadPackedModel('./bmw-compact-' + version));
       } catch (error) {
         console.warn('BMW packed download:', error.message);
         $('#status').textContent = 'Пробуем резервную загрузку BMW…';
@@ -674,7 +693,7 @@ async function autoload() {
     if (!bytes) {
       const response = await fetch('./bmw_m3_g80_meridiam.glb?v=' + version, { cache: 'reload' });
       if (!response.ok) throw new Error('Сайт не смог скачать модель BMW.');
-      bytes = await verifyHostedModel(await response.arrayBuffer());
+      bytes = await verifyHostedModel(await response.arrayBuffer(), true);
     }
     await loadInteractiveModel(bytes);
   } catch (error) {
@@ -715,8 +734,15 @@ const cabinEye = new THREE.Vector3();
 const cabinFocus = new THREE.Vector3();
 const cabinDirection = new THREE.Spherical();
 const cabinLook = { yaw: 0, pitch: 0 };
+let snapCabinCamera = false;
 
 function setCabin(which) {
+  snapCabinCamera = true;
+  if (!reducedMotion.matches) {
+    stage.animate([{ opacity: .15 }, { opacity: 1 }], { duration: 210, easing: 'ease-out' });
+  }
+  carRoot.rotation.y = 0;
+  redraw = true;
   state.interior = which;
   cabinLook.yaw = 0;
   cabinLook.pitch = 0;
@@ -815,7 +841,16 @@ function animate(now) {
  const yawDelta=THREE.MathUtils.euclideanModulo(state.rotation-carRoot.rotation.y+Math.PI,Math.PI*2)-Math.PI;carRoot.rotation.y+=Math.abs(yawDelta)<.0005?yawDelta:yawDelta*(1-Math.exp(-9*dt));
  podium.rotation.y=carRoot.rotation.y;
  // Articulation hinges are in model source units, corrected during GLB preparation.
- for(const [part,name]of Object.entries(openingRig)){let o=pivots[name];if(!o)continue;const delta=Math.abs(state.doors[part]-state.targetDoors[part]);movingHinge||=delta>.0005;state.doors[part]=delta>.0005?THREE.MathUtils.damp(state.doors[part],state.targetDoors[part],6,dt):state.targetDoors[part];o.rotation.y=part==='trunk'?0:angularTarget(part,state.doors[part]);if(part==='trunk')o.rotation.x=angularTarget(part,state.doors[part])}
+ for (const [part, name] of Object.entries(openingRig)) {
+   const hinge = pivots[name];
+   if (!hinge) continue;
+   const progress = state.doors[part];
+   const target = state.targetDoors[part];
+   movingHinge ||= progress !== target;
+   state.doors[part] = progress + Math.sign(target - progress) * Math.min(Math.abs(target - progress), dt / .78);
+   const ease = THREE.MathUtils.smoothstep(state.doors[part], 0, 1);
+   hinge.rotation[part === 'trunk' ? 'x' : 'y'] = angularTarget(part, ease);
+ }
  if (state.interior) {
    const [eye, focus] = cabinViews[state.interior];
    desiredCam.copy(carRoot.localToWorld(cabinEye.fromArray(eye)));
@@ -838,7 +873,8 @@ function animate(now) {
    desiredCam.set(4.30 * distance, 2.32 * distance, 8.45 * distance);
    desiredLook.set(-.65, 1.03, 0);
  }
- const damping = reducedMotion.matches ? 1 : 1 - Math.exp(-8 * dt);
+ const damping = reducedMotion.matches || snapCabinCamera ? 1 : 1 - Math.exp(-8 * dt);
+ snapCabinCamera = false;
  const roomMoving = Math.abs(carRoot.rotation.y - angleBefore) > .00005 || movingHinge;
  const cameraMoving = camera.position.distanceToSquared(desiredCam) > .00001 ||
    lookTarget.distanceToSquared(desiredLook) > .00001;
