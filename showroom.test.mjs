@@ -85,8 +85,15 @@ test('BMW showroom changes the rendered GLB in desktop and mobile Chromium', { t
     await page.waitForFunction(name => window.__MERIDIAM_QA().hinges[name].angles.some(value => Math.abs(value) > .4), name);
     const after = (await scene()).hinges[name];
     const movement = Math.hypot(...after.meshes.map((value, index) => value - before.meshes[index]));
-    // A real hinge moves panels locally. Prevent a lid orbiting around the model origin.
-    assert.ok(movement > .03 && movement < .95, name + ' moved ' + movement);
+    // The world-axis bounds also include the glass and mirrors on the wider-opening doors.
+    assert.ok(movement > .03 && movement < (button === 'trunk' ? .95 : 1.4), name + ' moved ' + movement);
+    if (button === 'fr' || button === 'rl') {
+      const trim = (await scene()).trim[button];
+      const window = button === 'fr' ? 'Object_1104' : 'Object_1107';
+      for (const mesh of [window, 'Object_1482', 'Object_223']) {
+        assert.ok(trim.some(piece => piece.name === mesh + '_trim_' + button), mesh + ' missing from ' + name);
+      }
+    }
     assert.ok(Math.hypot(...after.pivot.map((value, index) => value - before.pivot[index])) < .005);
   }
   await snapshot(page, '02-open-doors');
