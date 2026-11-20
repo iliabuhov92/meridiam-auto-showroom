@@ -46,6 +46,46 @@
 <div class="views" id="views"><button class="selected" data-view="hero">Три четверти</button><button data-view="side">Сбоку</button><button data-view="front">Спереди</button><button data-view="rear">Сзади</button></div><div class="microhint" id="hint">Перетаскивай мышью — вращение BMW · Колесо мыши — масштаб · Выбирай элементы</div><div id="toast" class="notice" role="status"></div>
 <nav class="tabs"><button data-tab="overview" class="selected">Обзор</button><button data-tab="salon">Салон</button><button data-tab="config">Конфигурация</button><button data-tab="light">Свет</button><button data-tab="specs">Характеристики</button><button class="cta" id="contact">Заказать проект →</button></nav>
 <button class="hotspot" id="spot-fl" title="Левая передняя дверь">+</button><button class="hotspot" id="spot-fr" title="Правая передняя дверь">+</button><button class="hotspot" id="spot-rl" title="Левая задняя дверь">+</button><button class="hotspot" id="spot-rr" title="Правая задняя дверь">+</button><button class="hotspot" id="spot-trunk" title="Багажник">+</button>
-<div id="loader" class="modal"><div class="dialog"><h2>BMW M3 Competition G80</h2><p>МЕРИДИАМ · Интерактивный 3D-шоурум.</p><label class="filepick">Выбрать BMW (.glb)<input id="fileInput" type="file" accept=".glb,model/gltf-binary"></label><div class="loading"><div id="progress"></div></div><div class="status" id="status">Подготовка сцены…</div></div></div>
+<div id="loader" class="modal"><div class="dialog"><h2>BMW M3 Competition G80</h2><p>МЕРИДИАМ · Интерактивный 3D-шоурум.</p><label class="filepick hidden">Выбрать BMW (.glb)<input id="fileInput" type="file" accept=".glb,model/gltf-binary"></label><div class="loading"><div id="progress"></div></div><div class="status" id="status" role="status">Загружаем код 3D-сцены…</div><p id="sceneStartupHint" class="subtext hidden"></p><button id="sceneStartupRetry" class="action hidden" type="button">Перезагрузить страницу</button></div></div>
 <div id="contactModal" class="modal hidden"><div class="dialog"><button id="closeContact" class="close" aria-label="Закрыть">×</button><h2>Заказать интерактивный 3D-проект</h2><p>Ваш продукт может быть представлен с таким же детальным обзором, материалами, конфигуратором и интерактивными функциями.</p><div class="contact-cta"><a href="https://iliabuhov92.github.io/meridiam/" target="_blank" rel="noopener">Перейти на сайт МЕРИДИАМ</a><button id="copyRequest">Скопировать текст заявки</button></div></div></div>
+<script>
+(() => {
+  const status = document.getElementById('status');
+  const hint = document.getElementById('sceneStartupHint');
+  const retry = document.getElementById('sceneStartupRetry');
+  const startingText = status.textContent;
+  const isStarting = () => status.textContent === startingText;
+
+  retry.addEventListener('click', () => location.reload());
+  function explain(message) {
+    if (!isStarting()) return;
+    hint.textContent = message;
+    hint.classList.remove('hidden');
+    retry.classList.remove('hidden');
+  }
+  addEventListener('error', event => {
+    if (event.target instanceof HTMLScriptElement && event.target.type === 'module') {
+      explain('Не удалось скачать код сцены. Перезагрузите страницу, чтобы повторить загрузку.');
+    } else if (event instanceof ErrorEvent) {
+      explain(/WebGL/i.test(event.message)
+        ? 'Браузер не смог запустить WebGL. Проверьте аппаратное ускорение и перезагрузите страницу.'
+        : 'Сцена не запустилась. Перезагрузите страницу, чтобы повторить попытку.');
+    }
+  }, true);
+  const timer = setTimeout(() => {
+    explain('Код сцены загружается дольше обычного. Можно подождать или перезагрузить страницу.');
+  }, 12000);
+  const observer = new MutationObserver(() => {
+    if (isStarting()) return;
+    clearTimeout(timer);
+    hint.classList.add('hidden');
+    retry.classList.add('hidden');
+    observer.disconnect();
+  });
+  observer.observe(status, { childList: true, characterData: true, subtree: true });
+  if (location.protocol === 'file:') {
+    document.getElementById('fileInput').closest('label').classList.remove('hidden');
+  }
+})();
+</script>
 <script type="module" src="./showroom.js"></script></body></html>
