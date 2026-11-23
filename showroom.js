@@ -188,36 +188,40 @@ function sportWheelFace(radius, depth, material) {
   ), material);
   lip.rotation.x = Math.PI / 2;
   face.add(lip);
-  // A dished hub bridges the pair roots while preserving the original cap and bolts.
+  // Five continuous Y-shaped forgings; the center cap remains the GLB part.
   const hub = new THREE.Mesh(new THREE.LatheGeometry([
-    [.09, -.35], [.105, -.32], [.17, -.31], [.27, -.36], [.278, -.43], [.12, -.48], [.09, -.46]
+    [.113, -.72], [.14, -.69], [.25, -.70], [.31, -.77],
+    [.31, -.88], [.15, -.87], [.113, -.82], [.113, -.72]
   ].map(([r, z]) => new THREE.Vector2(r * radius, z * depth)), 64), material);
   hub.rotation.x = Math.PI / 2;
   face.add(hub);
-  for (const direction of [-1, 1]) {
-    const outline = new THREE.Shape();
-    const point = (r, y) => [r * radius, direction * y * radius];
-    outline.moveTo(...point(.16, .013));
-    outline.bezierCurveTo(...point(.34, .021), ...point(.63, .077), ...point(.91, .195));
-    outline.lineTo(...point(.91, .253));
-    outline.bezierCurveTo(...point(.68, .176), ...point(.38, .092), ...point(.16, .052));
-    outline.closePath();
-    const geometry = new THREE.ExtrudeGeometry(outline, {
-      depth: depth * .19, bevelEnabled: true, bevelSize: radius * .014,
-      bevelThickness: depth * .07, bevelSegments: 4, curveSegments: 14
-    });
-    const vertices = geometry.attributes.position;
-    for (let i = 0; i < vertices.count; i++) {
-      const rise = THREE.MathUtils.smoothstep(vertices.getX(i) / radius, .17, .91) * depth * .18;
-      vertices.setZ(i, vertices.getZ(i) + rise);
-    }
-    geometry.computeVertexNormals();
-    for (let i = 0; i < 5; i++) {
-      const spoke = new THREE.Mesh(geometry, material);
-      spoke.rotation.z = i * Math.PI * 2 / 5;
-      spoke.position.z = -.3 * depth;
-      face.add(spoke);
-    }
+
+  const outline = new THREE.Shape();
+  const point = (r, y) => [r * radius, y * radius];
+  outline.moveTo(...point(.223, -.073));
+  outline.bezierCurveTo(...point(.44, -.064), ...point(.66, -.137), ...point(.916, -.279));
+  outline.lineTo(...point(.935, -.202));
+  outline.bezierCurveTo(...point(.73, -.103), ...point(.562, -.035), ...point(.491, -.012));
+  outline.quadraticCurveTo(...point(.468, 0), ...point(.491, .012));
+  outline.bezierCurveTo(...point(.562, .035), ...point(.73, .103), ...point(.935, .202));
+  outline.lineTo(...point(.916, .279));
+  outline.bezierCurveTo(...point(.66, .137), ...point(.44, .064), ...point(.223, .073));
+  outline.closePath();
+  const geometry = new THREE.ExtrudeGeometry(outline, {
+    depth: depth * .18, bevelEnabled: true, bevelSize: radius * .012,
+    bevelThickness: depth * .055, bevelSegments: 3, curveSegments: 14
+  });
+  const vertices = geometry.attributes.position;
+  for (let i = 0; i < vertices.count; i++) {
+    const rise = THREE.MathUtils.smoothstep(vertices.getX(i) / radius, .24, .91) * depth * .53;
+    vertices.setZ(i, vertices.getZ(i) + rise);
+  }
+  geometry.computeVertexNormals();
+  for (let i = 0; i < 5; i++) {
+    const spoke = new THREE.Mesh(geometry, material);
+    spoke.rotation.z = i * Math.PI * 2 / 5;
+    spoke.position.z = -.83 * depth;
+    face.add(spoke);
   }
   return face;
 }
@@ -309,11 +313,11 @@ function configureLights() {
   const low = state.light === 'low';
   beamFootprint.visible = low;
   illuminate(lightMeshes.drl, 0xd6f0ff, state.light === 'off' ? 0 : 1.8);
-  illuminate(lightMeshes.low, 0xe1f2ff, low ? 2.5 : 0);
+  illuminate(lightMeshes.low, 0xe1f2ff, low ? 8.5 : 0);
   illuminate(lightMeshes.rear, 0xff1628, state.rear ? 1.05 : 0);
   illuminate(lightMeshes.cabin, 0x7fb8e4, state.ambient ? .28 : 0);
   cabinFill.intensity = state.ambient ? 1.2 : 0;
-  for (const lamp of lights) lamp.intensity = low ? 112 : 0;
+  for (const lamp of lights) lamp.intensity = low ? 185 : 0;
   setSelected('[data-light]', 'light', state.light);
   setSelected('[data-signal]', 'signal', state.signal);
   $('#rearLight').classList.toggle('selected', state.rear);
@@ -1114,13 +1118,13 @@ function animate(now) {
  const flash = now % 1040 < 520;
  for (const material of lightMeshes.drl) {
    const signal = state.signal === 'hazard' || state.signal === blinkSideMap.get(material);
-   material.emissive.setHex(signal ? 0xff8a10 : 0xd6f0ff);
-   material.emissiveIntensity = signal ? (flash ? 2.1 : 0) : (state.light === 'off' ? 0 : 1.8);
+   material.emissive.setHex(signal ? 0xff8418 : 0xd6f0ff);
+   material.emissiveIntensity = signal ? (flash ? 7.4 : 0) : (state.light === 'off' ? 0 : 1.8);
  }
  for (const material of lightMeshes.blink) {
    const lit = flash && (state.signal === 'hazard' || state.signal === blinkSideMap.get(material));
-   material.emissive.setHex(0xff8a10);
-   material.emissiveIntensity = lit ? 2.0 : 0;
+   material.emissive.setHex(0xff8418);
+   material.emissiveIntensity = lit ? 8.5 : 0;
  }
  const frameKey = [
    isLoaded, state.tab, state.color, state.finish, state.seat, state.wheel, state.spoiler,
