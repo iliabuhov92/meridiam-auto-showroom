@@ -81,6 +81,9 @@ podium.add(contactShadow);
 const carRoot=new THREE.Group();carRoot.position.x=-.70;scene.add(carRoot);let carInner=null,carScale=1,carCenter=new THREE.Vector3(),isLoaded=false,originalWing=null,wingHigh=null;
 // Low-beam footprint on the two receiving surfaces. Its overlap follows the
 // circular plinth and uses the same forward axis as the headlamp spotlights.
+const cabinFill = new THREE.PointLight(0xd9e8ff, 0, 1.9, 2);
+cabinFill.position.set(0, .62, -.55);
+carRoot.add(cabinFill);
 const beamFootprint = new THREE.Group();
 const beamTexture = document.createElement('canvas');
 beamTexture.width = beamTexture.height = 256;
@@ -118,7 +121,7 @@ for (const onPodium of [true, false]) {
           bool inside = length(floorPoint) < 3.66;
           if (inside != onPodium) discard;
           vec4 glow = texture2D(footprint, coords);
-          gl_FragColor = vec4(glow.rgb, glow.a * .48);
+          gl_FragColor = vec4(glow.rgb, glow.a * .39);
         }`,
       transparent: true,
       depthWrite: false,
@@ -146,7 +149,7 @@ function partFromName(name) {
   return null;
 }
 function setMaterialOnce(mesh,handler){if(Array.isArray(mesh.material)){mesh.material=mesh.material.map(m=>handler(m))}else mesh.material=handler(mesh.material)}
-function changeColor(){const hex=colors[state.color];for(const m of paints){m.color.setHex(hex);m.metalness=state.finish==='matte'?.18:.55;m.roughness=state.finish==='matte'?.64:.22;m.clearcoat=state.finish==='matte'?0:1;m.clearcoatRoughness=.12;m.envMapIntensity=state.finish==='matte'?.7:1.35;m.needsUpdate=true}setSelected('[data-color]','color',state.color);setSelected('[data-finish]','finish',state.finish)}
+function changeColor(){const hex=colors[state.color];for(const m of paints){m.color.setHex(hex);m.metalness=state.finish==='matte'?.18:.42;m.roughness=state.finish==='matte'?.64:.26;m.clearcoat=state.finish==='matte'?0:1;m.clearcoatRoughness=.095;m.envMapIntensity=state.finish==='matte'?.7:1.13;m.needsUpdate=true}setSelected('[data-color]','color',state.color);setSelected('[data-finish]','finish',state.finish)}
 const wheelFaces = [];
 let wheelDesign = 'factory';
 
@@ -154,7 +157,7 @@ let wheelDesign = 'factory';
 // spokes are split into five pairs and share the original hub and wheel axes.
 function sportWheelFace(radius, depth, material) {
   const face = new THREE.Group();
-  const profile = [[.94, -.36], [1, -.29], [1, -.06], [.985, 0], [.95, 0], [.927, -.11], [.927, -.36]];
+  const profile = [[.94, -.42], [1, -.29], [1, -.06], [.985, 0], [.95, 0], [.927, -.11], [.927, -.36]];
   const lip = new THREE.Mesh(new THREE.LatheGeometry(
     profile.map(([r, z]) => new THREE.Vector2(r * radius, z * depth)), 80
   ), material);
@@ -162,10 +165,11 @@ function sportWheelFace(radius, depth, material) {
   face.add(lip);
   for (const direction of [-1, 1]) {
     const outline = new THREE.Shape();
-    outline.moveTo(.17 * radius, -.044 * radius);
-    outline.bezierCurveTo(.39 * radius, -.037 * radius, .69 * radius, direction * .1 * radius, .96 * radius, direction * .17 * radius);
-    outline.lineTo(.94 * radius, direction * .17 * radius + .068 * radius);
-    outline.bezierCurveTo(.69 * radius, direction * .1 * radius + .072 * radius, .35 * radius, .055 * radius, .17 * radius, .048 * radius);
+    const point = (r, y) => [r * radius, direction * y * radius];
+    outline.moveTo(...point(.16, .013));
+    outline.bezierCurveTo(...point(.34, .021), ...point(.63, .077), ...point(.91, .195));
+    outline.lineTo(...point(.91, .253));
+    outline.bezierCurveTo(...point(.68, .176), ...point(.38, .092), ...point(.16, .052));
     outline.closePath();
     const geometry = new THREE.ExtrudeGeometry(outline, {
       depth: depth * .22, bevelEnabled: true, bevelSize: radius * .014,
@@ -270,7 +274,8 @@ function configureLights() {
   illuminate(lightMeshes.drl, 0xd6f0ff, state.light === 'off' ? 0 : 1.8);
   illuminate(lightMeshes.low, 0xe1f2ff, low ? 2.5 : 0);
   illuminate(lightMeshes.rear, 0xff1628, state.rear ? 1.05 : 0);
-  illuminate(lightMeshes.cabin, 0x58bdff, state.ambient ? 0.5 : 0);
+  illuminate(lightMeshes.cabin, 0x7fb8e4, state.ambient ? .28 : 0);
+  cabinFill.intensity = state.ambient ? 1.2 : 0;
   for (const lamp of lights) lamp.intensity = low ? 112 : 0;
   setSelected('[data-light]', 'light', state.light);
   setSelected('[data-signal]', 'signal', state.signal);
@@ -305,6 +310,7 @@ async function engineSound(on) {
     const { source, volume } = activeEngine;
     activeEngine = null;
     const stop = audioContext.currentTime;
+    volume.gain.cancelAndHoldAtTime(stop);
     volume.gain.setTargetAtTime(.0001, stop, .045);
     source.stop(stop + .20);
     return;
@@ -319,14 +325,18 @@ async function engineSound(on) {
     const volume = audioContext.createGain();
     const now = audioContext.currentTime;
     source.buffer = buffer;
-    source.loop = true;
-    source.loopStart = 3.36;
-    source.loopEnd = Math.min(5.47, buffer.duration);
+    const filter = audioContext.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.value = 1900;
     volume.gain.setValueAtTime(.001, now);
-    volume.gain.linearRampToValueAtTime(.48, now + .10);
-    source.connect(volume).connect(audioContext.destination);
+    volume.gain.linearRampToValueAtTime(.35, now + .075);
+    volume.gain.setValueAtTime(.35, now + buffer.duration - .45);
+    volume.gain.linearRampToValueAtTime(.001, now + buffer.duration);
+    source.connect(filter).connect(volume).connect(audioContext.destination);
     source.start();
-    activeEngine = { source, volume };
+    const playback = { source, volume };
+    activeEngine = playback;
+    source.onended = () => { if (activeEngine === playback) activeEngine = null; };
   } catch (error) {
     if (request !== engineRequest) return;
     console.warn('BMW engine audio:', error.message);
@@ -423,7 +433,7 @@ function mountCockpitDisplay(car) {
 
 // The source combines both sides and, in some meshes, fixed body parts in one material.
 const sharedDoorTrim = [
-  'Object_37', 'Object_64', 'Object_76', 'Object_79', 'Object_204', 'Object_207',
+  'Object_37', 'Object_157', 'Object_64', 'Object_76', 'Object_79', 'Object_204', 'Object_207',
   'Object_223', 'Object_232', 'Object_1063', 'Object_1104', 'Object_1107', 'Object_1482'
 ];
 
@@ -439,6 +449,7 @@ function doorForIsland(name, { min, max }) {
   if (name === 'Object_1482' && (min.z < -1.55 || (min.z > .2 && max.z > .9))) {
     return 'fixed';
   }
+  if (name === 'Object_157' && Math.abs(x) < .75) return 'fixed';
   if (Math.abs(x) < .69 || ((name === 'Object_223' || name === 'Object_64') && min.z > .55)) {
     return 'fixed';
   }
@@ -521,7 +532,23 @@ function attachDoorTrim(car) {
     mesh.removeFromParent();
   }
 }
-function normalize(glb){if(carInner){carRoot.clear();carInner=null}paints.length=0;glass.length=0;seatMaterials.length=0;wheelMaterials.length=0;originalWing=null;wingHigh=null;Object.values(lightMeshes).forEach(a=>a.length=0);Object.keys(pivots).forEach(k=>delete pivots[k]);
+// Fine relief gives the existing upholstery UVs a diffuse, tactile finish.
+const grain = new Uint8Array(128 * 128 * 4);
+let grainSeed = 937;
+for (let i = 0; i < grain.length; i += 4) {
+  grainSeed = (Math.imul(grainSeed, 1664525) + 1013904223) >>> 0;
+  const shade = 86 + (grainSeed >>> 25);
+  grain.set([shade, shade, shade, 255], i);
+}
+const upholsteryGrain = new THREE.DataTexture(grain, 128, 128);
+upholsteryGrain.wrapS = upholsteryGrain.wrapT = THREE.RepeatWrapping;
+upholsteryGrain.repeat.set(8, 8);
+upholsteryGrain.magFilter = THREE.LinearFilter;
+upholsteryGrain.minFilter = THREE.LinearMipmapLinearFilter;
+upholsteryGrain.generateMipmaps = true;
+upholsteryGrain.needsUpdate = true;
+
+function normalize(glb){if(carInner){carInner.removeFromParent();carInner=null}paints.length=0;glass.length=0;seatMaterials.length=0;wheelMaterials.length=0;originalWing=null;wingHigh=null;Object.values(lightMeshes).forEach(a=>a.length=0);Object.keys(pivots).forEach(k=>delete pivots[k]);
  const car=glb.scene;car.updateMatrixWorld(true);const b=new THREE.Box3().setFromObject(car),size=b.getSize(new THREE.Vector3());carCenter=b.getCenter(new THREE.Vector3());carScale=5.45/Math.max(size.x,size.z);if(!Number.isFinite(carScale)||carScale<.0001)throw Error('Некорректный масштаб BMW');
  car.position.sub(carCenter);carInner=new THREE.Group();carInner.scale.setScalar(carScale);carInner.add(car);carRoot.add(carInner);carRoot.position.y=.204+size.y*carScale/2;
  const uniq={paint:new Set(),seats:new Set(),wheels:new Set(),glass:new Set()};let nodes=0;
@@ -533,8 +560,26 @@ function normalize(glb){if(carInner){carRoot.clear();carInner=null}paints.length
  setMaterialOnce(o,m=>{let name=(m.name||'').toLowerCase(),oname=parentPath(o),kind=partFromName(oname+' '+name);
  if(name.includes('sapphire black')||(/paint_(hood|doors|trunk|fender|top|front|rear|bumper|fb|rb|gascap)/.test(oname)&&name.includes('paint'))){let clone=m.clone();clone.name='MERIDIAM_PAINT_'+o.name;clone.map=null;clone.color.setHex(colors[state.color]);clone.metalness=.55;clone.roughness=.22;clone.clearcoat=1;clone.clearcoatRoughness=.12;clone.envMapIntensity=1.35;paints.push(clone);return clone}
  if(name.includes('meridiam | windshield')||name.includes('meridiam | side windows')||name.includes('meridiam | rear window')||name.includes('meridiam | interior glazing')){let clone=m.clone();clone.depthWrite=false;clone.transparent=true;clone.side=THREE.FrontSide;clone.opacity=name.includes('inner')?.04:.26;clone.color.setHex(0x19222b);clone.metalness=.2;clone.roughness=.16;clone.envMapIntensity=.34;glass.push(clone);o.castShadow=false;return clone}
- if(/meridiam.*(seat bolsters|seat inserts)|seat_leather|alkantaraseat|seat_koga|seat_alc|int_paint3/i.test(name+' '+oname)){let clone=m.clone();clone.name='MERIDIAM_SEAT_'+o.name;clone.color.setHex(0x242931);clone.metalness=0;clone.roughness=.75;seatMaterials.push(clone);return clone}
+ if(/meridiam.*(seat bolsters|seat inserts)|seat_leather|alkantaraseat|seat_koga|seat_alc|int_paint3/i.test(name+' '+oname)){let clone=m.clone();clone.name='MERIDIAM_SEAT_'+o.name;clone.color.setHex(0x242931);clone.metalness=0;clone.roughness=.75;clone.bumpMap=upholsteryGrain;clone.bumpScale=.0008;seatMaterials.push(clone);return clone}
  if(/g80_rim_|rim(_|[0-9])|rim_metal|rim_ring/.test(oname)&&!/brake|disc|tyre|tire|rim_badge|rim_m_badge|rim_logo|nipel|screws/i.test(oname)){let clone=m.clone();clone.name='MERIDIAM_RIM_'+o.name;clone.map=null;clone.metalness=.78;clone.roughness=.34;wheelMaterials.push(clone);return clone}
+ if (/brakedisc/.test(oname)) {
+   const rotor = m.clone();
+   rotor.color.setHex(0x909296);
+   rotor.metalness = .66;
+   rotor.roughness = .48;
+   rotor.envMapIntensity = .66;
+   return rotor;
+ }
+ if (/plasticreartrunkint|carpetinterior|plasticsill|plasticdoorsill|plasticpassdoor|karti_hoja/.test(oname)) {
+   const trim = m.clone();
+   if (!trim.map) trim.color.setHex(/trunk|carpet/.test(oname) ? 0x252529 : 0x303238);
+   trim.metalness = 0;
+   trim.roughness = /trunk|carpet/.test(oname) ? .96 : .73;
+   trim.envMapIntensity = .28;
+   trim.bumpMap = upholsteryGrain;
+   trim.bumpScale = /trunk|carpet/.test(oname) ? .002 : .0007;
+   return trim;
+ }
  if(kind){let clone=m.clone();clone.emissive=new THREE.Color(0);clone.emissiveIntensity=0;lightMeshes[kind].push(clone);if(kind==='blink'||kind==='drl')blinkSideMap.set(clone,/_r_|right|_rf_/.test(oname)?'right':'left');if(kind==='dash')clone.emissiveMap=clone.map;return clone}
  if (/int_leather|int_plastic|int_carbon/.test(oname) && oname.includes('steer_hr')) {
    const trim = m.clone();
@@ -569,8 +614,25 @@ function normalize(glb){if(carInner){carRoot.clear();carInner=null}paints.length
    hinge.attach(originalWing);
    wingHigh = originalWing.clone(true);
    wingHigh.name = 'MERIDIAM_ALTERNATE_SPOILER';
-   wingHigh.scale.x *= 1.055;
-   wingHigh.scale.y *= 1.07;
+   wingHigh.traverse(mesh => {
+     if (!mesh.isMesh) return;
+     mesh.geometry = mesh.geometry.clone();
+     mesh.geometry.computeBoundingBox();
+     const { min, max } = mesh.geometry.boundingBox;
+     const vertices = mesh.geometry.attributes.position;
+     const width = max.x - min.x;
+     const height = max.y - min.y;
+     if (width < .1 || height < .001) return;
+     for (let i = 0; i < vertices.count; i++) {
+       const x = (vertices.getX(i) - min.x) / width;
+       const y = vertices.getY(i);
+       const crown = Math.sin(Math.PI * x) ** 2;
+       vertices.setY(i, y + crown * THREE.MathUtils.smoothstep(y, min.y + height * .35, max.y) * height * .36);
+     }
+     mesh.geometry.computeVertexNormals();
+     mesh.geometry.computeBoundingBox();
+     mesh.geometry.computeBoundingSphere();
+   });
    hinge.add(wingHigh);
  }
  // Actual light beam originates near the original headlights, moves with model.
@@ -783,7 +845,7 @@ function setView(key){doorFocus=null;state.interior=null;state.view=key;const he
 const cabinViews = {
   driver: [[.46,.51,-.35], [.10,.03,1.05]],
   passenger: [[-.46,.43,.07], [-.28,.15,1.55]],
-  rear: [[.05,.46,-1.24], [.02,.18,.72]]
+  rear: [[.05,.48,-1.33], [.02,.20,.72]]
 };
 const cabinEye = new THREE.Vector3();
 const cabinFocus = new THREE.Vector3();
@@ -837,9 +899,11 @@ surface.addEventListener('pointermove', event => {
   const dx = event.clientX - lastX;
   const dy = event.clientY - lastY;
   if (state.interior) {
-    cabinLook.yaw = THREE.MathUtils.clamp(cabinLook.yaw - dx * .005, -1.95, 1.95);
-    cabinLook.pitch = THREE.MathUtils.clamp(cabinLook.pitch + dy * .0045, -.48, .64);
+    cabinLook.yaw = THREE.MathUtils.clamp(cabinLook.yaw - dx * .005, -1.62, 1.62);
+    cabinLook.pitch = THREE.MathUtils.clamp(cabinLook.pitch + dy * .0045, -.38, .53);
   } else {
+    // The access camera follows the door, which would cancel a rotation.
+    if (dx !== 0) doorFocus = null;
     state.rotation += dx * .0067;
     const seconds = Math.max(.012, (event.timeStamp - lastMove) / 1000);
     turnVelocity = THREE.MathUtils.clamp(dx * .0067 / seconds, -3.2, 3.2);
@@ -892,7 +956,10 @@ function animate(now) {
  last = now;
  const angleBefore = carRoot.rotation.y;
  let movingHinge = false;
- if(state.auto&&!state.interior)state.rotation+=dt*.15;
+ if (state.auto && !state.interior) {
+   doorFocus = null;
+   state.rotation += dt * .15;
+ }
  const yawDelta=THREE.MathUtils.euclideanModulo(state.rotation-carRoot.rotation.y+Math.PI,Math.PI*2)-Math.PI;carRoot.rotation.y+=Math.abs(yawDelta)<.0005?yawDelta:yawDelta*(1-Math.exp(-9*dt));
  podium.rotation.y=carRoot.rotation.y;
  // Articulation hinges are in model source units, corrected during GLB preparation.
@@ -933,7 +1000,7 @@ function animate(now) {
  const roomMoving = Math.abs(carRoot.rotation.y - angleBefore) > .00005 || movingHinge;
  const cameraMoving = camera.position.distanceToSquared(desiredCam) > .00001 ||
    lookTarget.distanceToSquared(desiredLook) > .00001;
- camera.fov = THREE.MathUtils.lerp(camera.fov, state.interior === 'driver' ? (camera.aspect < .8 ? 80 : 69) : state.interior ? (camera.aspect < .8 ? 73 : 62) : 34, damping);
+ camera.fov = THREE.MathUtils.lerp(camera.fov, state.interior === 'driver' ? (camera.aspect < .8 ? 72 : 63) : state.interior ? (camera.aspect < .8 ? 67 : 57) : 34, damping);
  camera.filmOffset = THREE.MathUtils.lerp(camera.filmOffset, state.interior ? 0 : (innerWidth > 900 ? 3.2 : 0), damping);
  camera.updateProjectionMatrix();
  camera.position.lerp(desiredCam, damping);
