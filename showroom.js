@@ -78,6 +78,30 @@ const contactShadow = new THREE.Mesh(
 contactShadow.rotation.x = -Math.PI / 2;
 contactShadow.position.y = .202;
 podium.add(contactShadow);
+// Dim the exhibition independently of vehicle lights and UI.
+const studioLights = scene.children.filter(node => node.isLight)
+  .map(light => ({ light, intensity: light.intensity }));
+const roomSurfaces = [...new Set(scene.children.filter(node => node.isMesh && node.material.color)
+  .map(mesh => mesh.material))].map(material => ({ material, color: material.color.clone() }));
+let studioDim = 0;
+
+function updateStudioLighting(dt) {
+  const target = state.tab === 'light' ? 1 : 0;
+  if (studioDim === target) return false;
+  const next = THREE.MathUtils.damp(studioDim, target, 7, dt);
+  studioDim = Math.abs(next - target) < .002 ? target : next;
+  for (const { light, intensity } of studioLights) {
+    light.intensity = intensity * (1 - studioDim * (light === rimLight ? .57 : .78));
+  }
+  for (const { material, color } of roomSurfaces) {
+    material.color.copy(color).multiplyScalar(1 - studioDim * .71);
+  }
+  scene.environmentIntensity = 1.05 - studioDim * .43;
+  scene.background.setHex(0x090e16).multiplyScalar(1 - studioDim * .83);
+  scene.fog.color.copy(scene.background);
+  return true;
+}
+
 const carRoot=new THREE.Group();carRoot.position.x=-.70;scene.add(carRoot);let carInner=null,carScale=1,carCenter=new THREE.Vector3(),isLoaded=false,originalWing=null,wingHigh=null;
 // Low-beam footprint on the two receiving surfaces. Its overlap follows the
 // circular plinth and uses the same forward axis as the headlamp spotlights.
@@ -121,7 +145,8 @@ for (const onPodium of [true, false]) {
           bool inside = length(floorPoint) < 3.66;
           if (inside != onPodium) discard;
           vec4 glow = texture2D(footprint, coords);
-          gl_FragColor = vec4(glow.rgb, glow.a * .39);
+          float cutoff = smoothstep(.04, .09, coords.y);
+          gl_FragColor = vec4(glow.rgb, glow.a * cutoff * .54);
         }`,
       transparent: true,
       depthWrite: false,
@@ -163,6 +188,12 @@ function sportWheelFace(radius, depth, material) {
   ), material);
   lip.rotation.x = Math.PI / 2;
   face.add(lip);
+  // A dished hub bridges the pair roots while preserving the original cap and bolts.
+  const hub = new THREE.Mesh(new THREE.LatheGeometry([
+    [.09, -.35], [.105, -.32], [.17, -.31], [.27, -.36], [.278, -.43], [.12, -.48], [.09, -.46]
+  ].map(([r, z]) => new THREE.Vector2(r * radius, z * depth)), 64), material);
+  hub.rotation.x = Math.PI / 2;
+  face.add(hub);
   for (const direction of [-1, 1]) {
     const outline = new THREE.Shape();
     const point = (r, y) => [r * radius, direction * y * radius];
@@ -172,9 +203,15 @@ function sportWheelFace(radius, depth, material) {
     outline.bezierCurveTo(...point(.68, .176), ...point(.38, .092), ...point(.16, .052));
     outline.closePath();
     const geometry = new THREE.ExtrudeGeometry(outline, {
-      depth: depth * .22, bevelEnabled: true, bevelSize: radius * .014,
-      bevelThickness: depth * .065, bevelSegments: 2, curveSegments: 9
+      depth: depth * .19, bevelEnabled: true, bevelSize: radius * .014,
+      bevelThickness: depth * .07, bevelSegments: 4, curveSegments: 14
     });
+    const vertices = geometry.attributes.position;
+    for (let i = 0; i < vertices.count; i++) {
+      const rise = THREE.MathUtils.smoothstep(vertices.getX(i) / radius, .17, .91) * depth * .18;
+      vertices.setZ(i, vertices.getZ(i) + rise);
+    }
+    geometry.computeVertexNormals();
     for (let i = 0; i < 5; i++) {
       const spoke = new THREE.Mesh(geometry, material);
       spoke.rotation.z = i * Math.PI * 2 / 5;
@@ -345,8 +382,8 @@ async function engineSound(on) {
 }
 function toggleEngine(){state.engine=!state.engine;updateCockpit(state.engine);engineSound(state.engine);$('#digitalText').textContent=state.engine?'READY / P':'OFF';$('#rpmLevel').style.width=state.engine?'28%':'12%';$('#engineCaption').textContent=state.engine?'Двигатель запущен · приборы активны':'Система выключена';$$('[data-start-engine]').forEach(b=>b.classList.toggle('selected',state.engine));for(const m of lightMeshes.dash){m.emissive.setHex(state.engine?0x75bffc:0);m.emissiveIntensity=state.engine?.7:0}say(state.engine?'Двигатель запущен':'Двигатель выключен')}
 const cockpitCanvas = document.createElement('canvas');
-cockpitCanvas.width = 1024;
-cockpitCanvas.height = 256;
+cockpitCanvas.width = 2048;
+cockpitCanvas.height = 512;
 const cockpitContext = cockpitCanvas.getContext('2d');
 const cockpitTexture = new THREE.CanvasTexture(cockpitCanvas);
 cockpitTexture.colorSpace = THREE.SRGBColorSpace;
@@ -358,47 +395,80 @@ let cockpitTimer;
 
 function drawCockpit(mode) {
   const ctx = cockpitContext;
+  ctx.setTransform(2, 0, 0, 2, 0, 0);
   ctx.clearRect(0, 0, 1024, 256);
   ctx.fillStyle = '#05080e';
   ctx.fillRect(0, 0, 518, 256);
   if (mode === 'boot') {
-    const x = 268, y = 128, r = 59;
-    ctx.strokeStyle = '#e5edf5';
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.arc(x, y, r, 0, 2 * Math.PI);
-    ctx.stroke();
-    for (let i = 0; i < 4; i++) {
-      ctx.fillStyle = i % 2 ? '#e7f3ff' : '#469bd7';
+    const x = 255, y = 126;
+    const drawDisc = (radius, color) => {
       ctx.beginPath();
-      ctx.moveTo(x, y + 8);
-      ctx.arc(x, y + 8, 33, i * Math.PI / 2, (i + 1) * Math.PI / 2, false);
+      ctx.arc(x, y, radius, 0, 2 * Math.PI);
+      ctx.fillStyle = color;
+      ctx.fill();
+    };
+    const rim = ctx.createLinearGradient(x, y - 59, x, y + 59);
+    rim.addColorStop(0, '#e9f1f7');
+    rim.addColorStop(.5, '#8193a1');
+    rim.addColorStop(1, '#c6d4df');
+    drawDisc(56, rim);
+    drawDisc(53, '#070b10');
+    drawDisc(34, '#d7e2eb');
+    for (let i = 0; i < 4; i++) {
+      ctx.fillStyle = i % 2 ? '#1389c6' : '#f0f5f9';
+      ctx.beginPath();
+      ctx.moveTo(x, y);
+      ctx.arc(x, y, 32, i * Math.PI / 2, (i + 1) * Math.PI / 2);
       ctx.closePath();
       ctx.fill();
     }
     ctx.fillStyle = '#edf5ff';
-    ctx.font = '600 17px system-ui';
+    ctx.font = '700 13px system-ui';
     ctx.textAlign = 'center';
-    ctx.fillText('B M W', x, y - 36);
+    for (const [letter, angle] of [['B', -.49], ['M', 0], ['W', .49]]) {
+      ctx.save();
+      ctx.translate(x, y);
+      ctx.rotate(angle);
+      ctx.fillText(letter, 0, -40);
+      ctx.restore();
+    }
   }
   if (mode === 'running') {
-    ctx.strokeStyle = '#659ac8';
-    ctx.lineWidth = 4;
-    for (const x of [107, 435]) {
+    const wash = ctx.createLinearGradient(0, 45, 0, 220);
+    wash.addColorStop(0, '#0d1726');
+    wash.addColorStop(1, '#04080d');
+    ctx.fillStyle = wash;
+    ctx.fillRect(29, 32, 446, 195);
+    for (const side of [-1, 1]) {
+      const cx = 252 + side * 147;
+      ctx.save();
+      ctx.translate(cx, 139);
+      ctx.scale(side, 1);
+      ctx.strokeStyle = side > 0 ? '#bd5460' : '#619bc1';
+      ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.arc(x, 127, 79, .74 * Math.PI, 1.79 * Math.PI);
+      ctx.arc(0, 0, 70, -1.38, 1.25);
       ctx.stroke();
+      for (let i = 0; i <= 8; i++) {
+        const angle = -1.38 + i * .329;
+        const inner = i % 2 ? 60 : 54;
+        ctx.beginPath();
+        ctx.moveTo(Math.cos(angle) * inner, Math.sin(angle) * inner);
+        ctx.lineTo(Math.cos(angle) * 65, Math.sin(angle) * 65);
+        ctx.stroke();
+      }
+      ctx.restore();
     }
     ctx.fillStyle = '#e8f1fa';
     ctx.textAlign = 'center';
-    ctx.font = '500 86px system-ui';
-    ctx.fillText('0', 246, 146);
-    ctx.font = '500 22px system-ui';
-    ctx.fillText('км/ч', 246, 176);
-    ctx.fillText('P', 404, 155);
-    ctx.fillText('1.1 × 1000 об/мин', 260, 218);
-    ctx.fillStyle = '#55d498';
-    ctx.fillText('READY', 246, 49);
+    ctx.font = '500 70px system-ui';
+    ctx.fillText('0', 252, 146);
+    ctx.font = '500 17px system-ui';
+    ctx.fillText('км/ч', 252, 169);
+    ctx.fillText('P', 330, 145);
+    ctx.fillText('1.1 × 1000 об/мин', 252, 198);
+    ctx.fillStyle = '#70d09b';
+    ctx.fillText('READY', 252, 86);
   }
   cockpitTexture.needsUpdate = true;
   redraw = true;
@@ -548,6 +618,36 @@ upholsteryGrain.minFilter = THREE.LinearMipmapLinearFilter;
 upholsteryGrain.generateMipmaps = true;
 upholsteryGrain.needsUpdate = true;
 
+const rotorCanvas = document.createElement('canvas');
+rotorCanvas.width = rotorCanvas.height = 256;
+const rotorContext = rotorCanvas.getContext('2d');
+rotorContext.fillStyle = '#a6a6a6';
+rotorContext.fillRect(0, 0, 256, 256);
+for (let radius = 48; radius < 127; radius++) {
+  const tone = 148 + ((radius * 31) % 39);
+  rotorContext.strokeStyle = `rgb(${tone},${tone},${tone})`;
+  rotorContext.beginPath();
+  rotorContext.arc(128, 128, radius, 0, Math.PI * 2);
+  rotorContext.stroke();
+}
+const rotorRoughness = new THREE.CanvasTexture(rotorCanvas);
+rotorRoughness.channel = 1;
+
+function applyRotorFinish(mesh, material) {
+  const geometry = mesh.geometry.clone();
+  geometry.computeBoundingBox();
+  const { min, max } = geometry.boundingBox;
+  const positions = geometry.attributes.position;
+  const uv = new Float32Array(positions.count * 2);
+  for (let i = 0; i < positions.count; i++) {
+    uv[i * 2] = (positions.getY(i) - min.y) / (max.y - min.y);
+    uv[i * 2 + 1] = (positions.getZ(i) - min.z) / (max.z - min.z);
+  }
+  geometry.setAttribute('uv1', new THREE.BufferAttribute(uv, 2));
+  mesh.geometry = geometry;
+  material.roughnessMap = rotorRoughness;
+}
+
 function normalize(glb){if(carInner){carInner.removeFromParent();carInner=null}paints.length=0;glass.length=0;seatMaterials.length=0;wheelMaterials.length=0;originalWing=null;wingHigh=null;Object.values(lightMeshes).forEach(a=>a.length=0);Object.keys(pivots).forEach(k=>delete pivots[k]);
  const car=glb.scene;car.updateMatrixWorld(true);const b=new THREE.Box3().setFromObject(car),size=b.getSize(new THREE.Vector3());carCenter=b.getCenter(new THREE.Vector3());carScale=5.45/Math.max(size.x,size.z);if(!Number.isFinite(carScale)||carScale<.0001)throw Error('Некорректный масштаб BMW');
  car.position.sub(carCenter);carInner=new THREE.Group();carInner.scale.setScalar(carScale);carInner.add(car);carRoot.add(carInner);carRoot.position.y=.204+size.y*carScale/2;
@@ -566,7 +666,8 @@ function normalize(glb){if(carInner){carInner.removeFromParent();carInner=null}p
    const rotor = m.clone();
    rotor.color.setHex(0x909296);
    rotor.metalness = .66;
-   rotor.roughness = .48;
+   rotor.roughness = .68;
+   applyRotorFinish(o, rotor);
    rotor.envMapIntensity = .66;
    return rotor;
  }
@@ -957,6 +1058,7 @@ function animate(now) {
  requestAnimationFrame(animate);
  const dt = reducedMotion.matches ? 1 : Math.min(.2, (now - last) / 1000);
  last = now;
+ const studioMoving = updateStudioLighting(dt);
  const angleBefore = carRoot.rotation.y;
  let movingHinge = false;
  if (state.auto && !state.interior) {
@@ -1024,7 +1126,7 @@ function animate(now) {
    isLoaded, state.tab, state.color, state.finish, state.seat, state.wheel, state.spoiler,
    state.light, state.rear, state.ambient, state.engine, state.signal, state.signal !== 'off' && flash
  ].join('|');
- if (redraw || frameKey !== renderedKey || roomMoving || cameraMoving) {
+ if (redraw || frameKey !== renderedKey || roomMoving || cameraMoving || studioMoving) {
    renderer.shadowMap.needsUpdate = redraw || roomMoving;
    renderer.render(scene,camera);
    updateSpots();
