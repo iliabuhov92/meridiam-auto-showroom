@@ -570,14 +570,17 @@ function normalize(glb){if(carInner){carInner.removeFromParent();carInner=null}p
    rotor.envMapIntensity = .66;
    return rotor;
  }
- if (/plasticreartrunkint|carpetinterior|plasticsill|plasticdoorsill|plasticpassdoor|karti_hoja/.test(oname)) {
+ if (/plasticreartrunkint|carpetinterior|plasticsill|plasticdoorsill|plasticpassdoor|karti_hoja|blackplastic_doors|metaldetaildoorsill|pianoblack.*door|plastikking_seat/.test(oname)) {
    const trim = m.clone();
-   if (!trim.map) trim.color.setHex(/trunk|carpet/.test(oname) ? 0x252529 : 0x303238);
+   const carpet = /trunk|carpet/.test(oname);
+   trim.color.setHex(carpet ? 0x45454a : 0x575a60);
+   trim.clearcoat = 0;
+   trim.specularIntensity = .24;
    trim.metalness = 0;
-   trim.roughness = /trunk|carpet/.test(oname) ? .96 : .73;
+   trim.roughness = carpet ? .96 : .76;
    trim.envMapIntensity = .28;
    trim.bumpMap = upholsteryGrain;
-   trim.bumpScale = /trunk|carpet/.test(oname) ? .002 : .0007;
+   trim.bumpScale = carpet ? .002 : .0007;
    return trim;
  }
  if(kind){let clone=m.clone();clone.emissive=new THREE.Color(0);clone.emissiveIntensity=0;lightMeshes[kind].push(clone);if(kind==='blink'||kind==='drl')blinkSideMap.set(clone,/_r_|right|_rf_/.test(oname)?'right':'left');if(kind==='dash')clone.emissiveMap=clone.map;return clone}
