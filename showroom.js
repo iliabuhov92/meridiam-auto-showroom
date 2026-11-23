@@ -174,7 +174,7 @@ function partFromName(name) {
   return null;
 }
 function setMaterialOnce(mesh,handler){if(Array.isArray(mesh.material)){mesh.material=mesh.material.map(m=>handler(m))}else mesh.material=handler(mesh.material)}
-function changeColor(){const hex=colors[state.color];for(const m of paints){m.color.setHex(hex);m.metalness=state.finish==='matte'?.18:.42;m.roughness=state.finish==='matte'?.64:.26;m.clearcoat=state.finish==='matte'?0:1;m.clearcoatRoughness=.095;m.envMapIntensity=state.finish==='matte'?.7:1.13;m.needsUpdate=true}setSelected('[data-color]','color',state.color);setSelected('[data-finish]','finish',state.finish)}
+function changeColor(){const hex=colors[state.color];for(const m of paints){m.color.setHex(hex);m.metalness=state.finish==='matte'?.18:.42;m.roughness=state.finish==='matte'?.64:.26;m.clearcoat=state.finish==='matte'?0:1;m.clearcoatRoughness=.095;m.bumpScale=state.finish==='matte'?.00038:.00010;m.envMapIntensity=state.finish==='matte'?.7:1.13;m.needsUpdate=true}setSelected('[data-color]','color',state.color);setSelected('[data-finish]','finish',state.finish)}
 const wheelFaces = [];
 let wheelDesign = 'factory';
 
@@ -268,7 +268,7 @@ function changeWheels(){
  // Both choices use the four original BMW rims. No new wheels float over the tyres.
  setSelected('[data-wheel]','wheel',state.wheel);
 }
-function changeSeat(){let col=state.seat==='cognac'?0x805137:state.seat==='cloth'?0x202b35:0x171b23;for(const m of seatMaterials){m.color.setHex(col);m.metalness=0;m.roughness=state.seat==='cloth'?.97:.71;m.clearcoat=state.seat==='cloth'?0:.13;m.needsUpdate=true}setSelected('[data-seat]','seat',state.seat)}
+function changeSeat(){let col=state.seat==='cognac'?0x805137:state.seat==='cloth'?0x202b35:0x171b23;for(const m of seatMaterials){m.color.setHex(col);m.metalness=0;m.roughness=state.seat==='cloth'?.97:.71;m.clearcoat=state.seat==='cloth'?0:.13;m.bumpMap=state.seat==='cloth'?clothGrain:upholsteryGrain;m.bumpScale=state.seat==='cloth'?.0014:.0010;m.needsUpdate=true}setSelected('[data-seat]','seat',state.seat)}
 function changeSpoiler(){if(originalWing)originalWing.visible=state.spoiler==='low';if(wingHigh)wingHigh.visible=state.spoiler==='high';setSelected('[data-spoiler]','spoiler',state.spoiler)}
 function setSelected(query,attr,value){$$(query).forEach(b=>{const selected=b.dataset[attr]===value;b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',String(selected))})}
 const openingRig = {fl:'MERIDIAM_RIG_DOOR_FRONT_LEFT',fr:'MERIDIAM_RIG_DOOR_FRONT_RIGHT',rl:'MERIDIAM_RIG_DOOR_REAR_LEFT',rr:'MERIDIAM_RIG_DOOR_REAR_RIGHT',trunk:'MERIDIAM_RIG_TRUNK_LID'};
@@ -606,21 +606,52 @@ function attachDoorTrim(car) {
     mesh.removeFromParent();
   }
 }
-// Fine relief gives the existing upholstery UVs a diffuse, tactile finish.
-const grain = new Uint8Array(128 * 128 * 4);
-let grainSeed = 937;
-for (let i = 0; i < grain.length; i += 4) {
-  grainSeed = (Math.imul(grainSeed, 1664525) + 1013904223) >>> 0;
-  const shade = 86 + (grainSeed >>> 25);
-  grain.set([shade, shade, shade, 255], i);
+// Tileable height maps use the model's UVs and leave the original color maps intact.
+function surfaceGrain(repeat, sample) {
+  const size = 128;
+  const pixels = new Uint8Array(size * size * 4);
+  let seed = 937;
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+      const shade = Math.round(sample(x, y, seed / 4294967296 - .5));
+      const offset = (y * size + x) * 4;
+      pixels.set([shade, shade, shade, 255], offset);
+    }
+  }
+  const texture = new THREE.DataTexture(pixels, size, size);
+  texture.wrapS = texture.wrapT = THREE.RepeatWrapping;
+  texture.repeat.set(repeat, repeat);
+  texture.magFilter = THREE.LinearFilter;
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.generateMipmaps = true;
+  texture.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  texture.needsUpdate = true;
+  return texture;
 }
-const upholsteryGrain = new THREE.DataTexture(grain, 128, 128);
-upholsteryGrain.wrapS = upholsteryGrain.wrapT = THREE.RepeatWrapping;
-upholsteryGrain.repeat.set(8, 8);
-upholsteryGrain.magFilter = THREE.LinearFilter;
-upholsteryGrain.minFilter = THREE.LinearMipmapLinearFilter;
-upholsteryGrain.generateMipmaps = true;
-upholsteryGrain.needsUpdate = true;
+const upholsteryGrain = surfaceGrain(6, (x, y, noise) => {
+  const u = x * Math.PI / 16;
+  const v = y * Math.PI / 16;
+  const crease = Math.abs(Math.sin(u + .65 * Math.sin(2 * v)) *
+    Math.sin(v + .52 * Math.sin(2 * u)));
+  return 99 + 65 * Math.sqrt(crease) + 14 * noise;
+});
+const clothGrain = surfaceGrain(6, (x, y, noise) => {
+  const warp = Math.cos(x * Math.PI / 4);
+  const weft = Math.cos(y * Math.PI / 4);
+  return 128 + 39 * Math.max(warp, weft) + 17 * warp * weft + 13 * noise;
+});
+const carbonGrain = surfaceGrain(6, (x, y, noise) => {
+  const u = x * Math.PI / 4;
+  const v = y * Math.PI / 4;
+  const over = Math.sin((x + y) * Math.PI / 16) > 0;
+  return 143 + 28 * (over ? Math.cos(u) : Math.cos(v)) + 6 * noise;
+});
+const rubberGrain = surfaceGrain(12, (x, y, noise) =>
+  128 + 7 * Math.sin(x * Math.PI / 8) * Math.cos(y * Math.PI / 8) + 46 * noise);
+const paintGrain = surfaceGrain(12, (x, y, noise) =>
+  128 + 21 * Math.sin(x * Math.PI / 16 + Math.sin(y * Math.PI / 8)) +
+  13 * Math.cos(y * Math.PI / 8 + Math.sin(x * Math.PI / 8)) + 10 * noise);
 
 const rotorCanvas = document.createElement('canvas');
 rotorCanvas.width = rotorCanvas.height = 256;
@@ -662,10 +693,29 @@ function normalize(glb){if(carInner){carInner.removeFromParent();carInner=null}p
  if(!o.isMesh)return;
  o.castShadow=!/windows|windshield/i.test(o.name);o.receiveShadow=true;
  setMaterialOnce(o,m=>{let name=(m.name||'').toLowerCase(),oname=parentPath(o),kind=partFromName(oname+' '+name);
- if(name.includes('sapphire black')||(/paint_(hood|doors|trunk|fender|top|front|rear|bumper|fb|rb|gascap)/.test(oname)&&name.includes('paint'))){let clone=m.clone();clone.name='MERIDIAM_PAINT_'+o.name;clone.map=null;clone.color.setHex(colors[state.color]);clone.metalness=.55;clone.roughness=.22;clone.clearcoat=1;clone.clearcoatRoughness=.12;clone.envMapIntensity=1.35;paints.push(clone);return clone}
+ if(name.includes('sapphire black')||(/paint_(hood|doors|trunk|fender|top|front|rear|bumper|fb|rb|gascap)/.test(oname)&&name.includes('paint'))){let clone=m.clone();clone.name='MERIDIAM_PAINT_'+o.name;clone.map=null;clone.bumpMap=paintGrain;clone.color.setHex(colors[state.color]);clone.metalness=.55;clone.roughness=.22;clone.clearcoat=1;clone.clearcoatRoughness=.12;clone.envMapIntensity=1.35;paints.push(clone);return clone}
  if(name.includes('meridiam | windshield')||name.includes('meridiam | side windows')||name.includes('meridiam | rear window')||name.includes('meridiam | interior glazing')){let clone=m.clone();clone.depthWrite=false;clone.transparent=true;clone.side=THREE.FrontSide;clone.opacity=name.includes('inner')?.04:.26;clone.color.setHex(0x19222b);clone.metalness=.2;clone.roughness=.16;clone.envMapIntensity=.34;glass.push(clone);o.castShadow=false;return clone}
  if(/meridiam.*(seat bolsters|seat inserts)|seat_leather|alkantaraseat|seat_koga|seat_alc|int_paint3/i.test(name+' '+oname)){let clone=m.clone();clone.name='MERIDIAM_SEAT_'+o.name;clone.color.setHex(0x242931);clone.metalness=0;clone.roughness=.75;clone.bumpMap=upholsteryGrain;clone.bumpScale=.0008;seatMaterials.push(clone);return clone}
  if(/g80_rim_|rim(_|[0-9])|rim_metal|rim_ring/.test(oname)&&!/brake|disc|tyre|tire|rim_badge|rim_m_badge|rim_logo|nipel|screws/i.test(oname)){let clone=m.clone();clone.name='MERIDIAM_RIM_'+o.name;clone.map=null;clone.metalness=.78;clone.roughness=.34;wheelMaterials.push(clone);return clone}
+ if (name.includes('carbon seat backs') || /carbonroof|int_carbon/.test(oname)) {
+   const carbon = m.clone();
+   carbon.bumpMap = carbonGrain;
+   carbon.bumpScale = .00055;
+   carbon.roughness = .34;
+   carbon.envMapIntensity = .78;
+   return carbon;
+ }
+ if (/tyre|tire/.test(oname) && !/brake|rim_logo/.test(oname)) {
+   const rubber = m.clone();
+   rubber.metalness = 0;
+   rubber.roughness = .86;
+   rubber.clearcoat = 0;
+   rubber.specularIntensity = .32;
+   rubber.envMapIntensity = .52;
+   rubber.bumpMap = rubberGrain;
+   rubber.bumpScale = .0011;
+   return rubber;
+ }
  if (/brakedisc/.test(oname)) {
    const rotor = m.clone();
    rotor.color.setHex(0x909296);
@@ -684,7 +734,7 @@ function normalize(glb){if(carInner){carInner.removeFromParent();carInner=null}p
    trim.metalness = 0;
    trim.roughness = carpet ? .96 : .76;
    trim.envMapIntensity = .28;
-   trim.bumpMap = upholsteryGrain;
+   trim.bumpMap = carpet ? clothGrain : upholsteryGrain;
    trim.bumpScale = carpet ? .002 : .0007;
    return trim;
  }
