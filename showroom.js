@@ -725,6 +725,68 @@ function normalize(glb){if(carInner){carInner.removeFromParent();carInner=null}p
    rotor.envMapIntensity = .66;
    return rotor;
  }
+ // The GLB shares several atlas materials between parts with different finishes.
+ if (/steeringstitch|ext_badge|int_buttons|int_leather|int_plastic/.test(oname) &&
+     oname.includes('steer_hr')) {
+   const finish = m.clone();
+   if (/ext_badge/.test(oname)) {
+     finish.roughness = .28;
+     finish.metalness = .12;
+     finish.clearcoat = .75;
+     finish.clearcoatRoughness = .16;
+     finish.envMapIntensity = .62;
+     if (finish.map) finish.map.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+   } else if (/int_leather/.test(oname)) {
+     finish.color.multiplyScalar(.25);
+     finish.roughness = .66;
+     finish.bumpMap = upholsteryGrain;
+     finish.bumpScale = .001;
+     finish.clearcoat = .08;
+     finish.envMapIntensity = .48;
+   } else {
+     finish.roughness = /gloss/.test(oname) ? .37 : .69;
+     finish.envMapIntensity = .46;
+     finish.clearcoat = 0;
+   }
+   return finish;
+ }
+ if (/glas_int_display_glass/.test(oname)) {
+   const cover = m.clone();
+   cover.roughness = .27;
+   cover.metalness = 0;
+   cover.envMapIntensity = .32;
+   return cover;
+ }
+ if (/leathermaindash|leathermaininterior|interiorzone1|leatherthirddriverdoor/.test(oname)) {
+   const leather = m.clone();
+   leather.color.setHex(0x40434a);
+   leather.metalness = 0;
+   leather.roughness = .77;
+   leather.clearcoat = 0;
+   leather.envMapIntensity = .36;
+   leather.bumpMap = upholsteryGrain;
+   leather.bumpScale = .001;
+   return leather;
+ }
+ if (/alcantaramainroof|plasticroofinterior|plastikking_seat/.test(oname)) {
+   const liner = m.clone();
+   liner.color.setHex(0x515155);
+   liner.metalness = 0;
+   liner.roughness = .91;
+   liner.clearcoat = 0;
+   liner.bumpMap = clothGrain;
+   liner.bumpScale = .0013;
+   return liner;
+ }
+ if (/chrome.*door|harmankardon.*door/.test(oname)) {
+   const hardware = m.clone();
+   const grille = /harmankardon/.test(oname);
+   hardware.metalness = grille ? .35 : .68;
+   hardware.roughness = grille ? .72 : .43;
+   hardware.envMapIntensity = .49;
+   hardware.clearcoat = 0;
+   return hardware;
+ }
  if (/plasticreartrunkint|carpetinterior|plasticsill|plasticdoorsill|plasticpassdoor|karti_hoja|blackplastic_doors|metaldetaildoorsill|pianoblack.*door|plastikking_seat/.test(oname)) {
    const trim = m.clone();
    const carpet = /trunk|carpet/.test(oname);
@@ -732,19 +794,13 @@ function normalize(glb){if(carInner){carInner.removeFromParent();carInner=null}p
    trim.clearcoat = 0;
    trim.specularIntensity = .24;
    trim.metalness = 0;
-   trim.roughness = carpet ? .96 : .76;
+   trim.roughness = carpet ? .96 : .82;
    trim.envMapIntensity = .28;
    trim.bumpMap = carpet ? clothGrain : upholsteryGrain;
    trim.bumpScale = carpet ? .002 : .0007;
    return trim;
  }
  if(kind){let clone=m.clone();clone.emissive=new THREE.Color(0);clone.emissiveIntensity=0;lightMeshes[kind].push(clone);if(kind==='blink'||kind==='drl')blinkSideMap.set(clone,/_r_|right|_rf_/.test(oname)?'right':'left');if(kind==='dash')clone.emissiveMap=clone.map;return clone}
- if (/int_leather|int_plastic|int_carbon/.test(oname) && oname.includes('steer_hr')) {
-   const trim = m.clone();
-   trim.color.multiplyScalar(.20);
-   trim.roughness = Math.max(trim.roughness, .58);
-   return trim;
- }
  if (!m.map && m.color.r > .55 && /cockpit|volan|interior|console|roofinside/.test(oname)) {
    const trim = m.clone();
    trim.color.setHex(0x25292e);
