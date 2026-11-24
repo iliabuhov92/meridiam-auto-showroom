@@ -874,7 +874,7 @@ function normalize(glb){if(carInner){carInner.removeFromParent();carInner=null}p
  for(const x of [-.78,.78]){const lamp=new THREE.SpotLight(0xe7f2ff,0,13,Math.PI/12,.48,2);lamp.position.set(x,-.055,2.45);lamp.target.position.set(x*1.45,-.81,6.25);carRoot.add(lamp,lamp.target);lights.push(lamp)}
  // Surface names and selectables present in the real asset.
  changeColor();changeWheels();changeSeat();changeSpoiler();configureLights();
- isLoaded=true;redraw=true;$('#loader').classList.add('hidden');say('BMW загружена · '+nodes+' узлов');setTab('config');setView('hero');resize();
+ isLoaded=true;redraw=true;$('#loader').classList.add('hidden');say('BMW загружена · '+nodes+' узлов');setTab('config');setView('hero');carRoot.rotation.y=state.rotation;snapCabinCamera=true;resize();
  if (new URLSearchParams(location.search).has('qa')) {
    window.__MERIDIAM_QA = () => ({
      paint: paints.map(m => [m.color.getHex(), m.roughness, m.clearcoat]),
@@ -1074,7 +1074,7 @@ fileInput.addEventListener('change', async event => {
 });
 autoload();
 function setTab(tab){state.tab=tab;const titles={overview:'Управление',salon:'Салон',config:'Конфигурация',light:'Освещение',specs:'О проекте'};$('#panelTitle').textContent=titles[tab];for(const s of ['overview','salon','config','light','specs'])$('#'+s+'-body').hidden=tab!==s;setSelected('[data-tab]','tab',tab);$('#views').classList.toggle('hidden',tab==='salon');if(tab!=='salon'&&state.interior){state.interior=null;setView('hero');$('#hint').textContent='Вращайте BMW мышью или касанием'}if(tab==='salon'){state.interior='driver';setCabin('driver')};$('.configuration').scrollTop=0}
-function setView(key){doorFocus=null;state.interior=null;state.view=key;const headOn=Math.atan2(4.30,8.45);const angles={hero:headOn+.79,front:headOn,side:headOn-Math.PI/2,rear:headOn-Math.PI};state.rotation=angles[key]??angles.hero;state.zoom=1;state.auto=false;$('#rotation').classList.remove('selected');setSelected('[data-view]','view',key)}
+function setView(key){doorFocus=null;state.interior=null;state.view=key;const headOn=Math.atan2(4.30,8.45);const angles={hero:headOn+.66,front:headOn,side:headOn-Math.PI/2,rear:headOn-Math.PI};state.rotation=angles[key]??angles.hero;state.zoom=key==='hero'?.90:1;state.auto=false;$('#rotation').classList.remove('selected');setSelected('[data-view]','view',key)}
 // Cabin anchors are in the normalized model's coordinates; +X is the driver side.
 const cabinViews = {
   driver: [[.46,.51,-.35], [.10,.03,1.05]],
@@ -1227,8 +1227,10 @@ function animate(now) {
    desiredLook.copy(carRoot.localToWorld(cabinFocus.set(side * .63, .14, doorZ)));
  } else {
    const distance = state.zoom * Math.max(.95, 1.08 / camera.aspect);
-   desiredCam.set(4.30 * distance, 2.32 * distance, 8.45 * distance);
-   desiredLook.set(-.65, 1.03, 0);
+   const hero = state.view === 'hero';
+   const cameraHeight = hero ? 1.73 : 2.32;
+   desiredCam.set(4.30 * distance, cameraHeight * distance, 8.45 * distance);
+   desiredLook.set(-.65, hero ? (camera.aspect < 1 ? .9 : .57) : 1.03, 0);
  }
  const damping = reducedMotion.matches || snapCabinCamera ? 1 : 1 - Math.exp(-8 * dt);
  snapCabinCamera = false;
