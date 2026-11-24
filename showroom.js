@@ -211,7 +211,7 @@ function partFromName(name) {
   if (/lowhighbeam/.test(name)) return 'low';
   if (/led_[lr]_white/.test(name)) return 'drl';
   if (/red_glass_fonari|light_tlmid/.test(name)) return 'rear';
-  if (/emissiveinterior|emissivedriverdoor|emissivepassdoor/.test(name)) return 'cabin';
+  if (/emissiveinterior|emissivedriverdoor|emissivepassdoor|int_sveeeet1_svve/.test(name)) return 'cabin';
   if (/priority_center_display/.test(name)) return 'dash';
   return null;
 }
@@ -551,7 +551,8 @@ function mountCockpitDisplay(car) {
 // The source combines both sides and, in some meshes, fixed body parts in one material.
 const sharedDoorTrim = [
   'Object_37', 'Object_157', 'Object_64', 'Object_76', 'Object_79', 'Object_204', 'Object_207',
-  'Object_223', 'Object_232', 'Object_291', 'Object_1063', 'Object_1104', 'Object_1107', 'Object_1482'
+  'Object_223', 'Object_232', 'Object_291', 'Object_412', 'Object_1063', 'Object_1104', 'Object_1107',
+  'Object_1148', 'Object_1482'
 ];
 
 function doorForIsland(name, { min, max }) {
@@ -562,6 +563,8 @@ function doorForIsland(name, { min, max }) {
   if (name === 'Object_291') {
     return Math.abs(x) > .58 && max.z - min.z > .36 ? null : 'fixed';
   }
+  // A sub-millimetre dashboard fragment shares the ambient-light strip mesh.
+  if (name === 'Object_1148' && max.z - min.z < .015) return 'fixed';
   // Rear glazing shares the mesh with the hatch-side backlight.
   if (name === 'Object_207' || name === 'Object_1107') {
     return max.z < -1.3 && min.z < -1.6 ? 'fixed' : x > 0 ? 'rl' : 'rr';
@@ -633,8 +636,7 @@ function attachDoorTrim(car) {
   const toCar = carRoot.matrixWorld.clone().invert();
   for (const [part, names] of Object.entries({
     fl: ['melkatpidr_819', 'HarmanKardonLogoDriverDoor_261'],
-    fr: ['pidtik2_874'],
-    rl: ['HarmanKardonLogoDriverDoorRear_283']
+    fr: ['pidtik2_874']
   })) {
     for (const name of names) {
       const node = car.getObjectByName(name);
