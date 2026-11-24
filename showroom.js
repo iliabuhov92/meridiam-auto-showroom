@@ -145,8 +145,8 @@ for (const onPodium of [true, false]) {
           bool inside = length(floorPoint) < 3.66;
           if (inside != onPodium) discard;
           vec4 glow = texture2D(footprint, coords);
-          float cutoff = smoothstep(.04, .09, coords.y);
-          gl_FragColor = vec4(glow.rgb, glow.a * cutoff * .54);
+          float cutoff = smoothstep(.07, .13, coords.y) * (1.0 - smoothstep(.80, .86, coords.y + abs(coords.x - .5) * .30));
+          gl_FragColor = vec4(glow.rgb, glow.a * cutoff * 1.08);
         }`,
       transparent: true,
       depthWrite: false,
@@ -174,7 +174,7 @@ function partFromName(name) {
   return null;
 }
 function setMaterialOnce(mesh,handler){if(Array.isArray(mesh.material)){mesh.material=mesh.material.map(m=>handler(m))}else mesh.material=handler(mesh.material)}
-function changeColor(){const hex=colors[state.color];for(const m of paints){m.color.setHex(hex);m.metalness=state.finish==='matte'?.18:.42;m.roughness=state.finish==='matte'?.64:.26;m.clearcoat=state.finish==='matte'?0:1;m.clearcoatRoughness=.095;m.bumpScale=state.finish==='matte'?.00038:.00010;m.envMapIntensity=state.finish==='matte'?.7:1.13;m.needsUpdate=true}setSelected('[data-color]','color',state.color);setSelected('[data-finish]','finish',state.finish)}
+function changeColor(){const hex=colors[state.color];for(const m of paints){m.color.setHex(hex);m.metalness=state.finish==='matte'?.18:.42;m.roughness=state.finish==='matte'?.64:.26;m.clearcoat=state.finish==='matte'?0:1;m.clearcoatRoughness=.075;m.bumpScale=state.finish==='matte'?.00038:.00010;m.envMapIntensity=state.finish==='matte'?.7:1.13;m.needsUpdate=true}setSelected('[data-color]','color',state.color);setSelected('[data-finish]','finish',state.finish)}
 const wheelFaces = [];
 let wheelDesign = 'factory';
 
@@ -287,7 +287,7 @@ function toggleDoor(part) {
     return;
   }
   state.targetDoors[part] = 1 - state.targetDoors[part];
-  if (part === 'fr' || part === 'rl') {
+  if (part === 'fr' || part[0] === 'r') {
     doorFocus = state.targetDoors[part] ? part : (doorFocus === part ? null : doorFocus);
     state.zoom = 1;
   }
@@ -313,11 +313,11 @@ function configureLights() {
   const low = state.light === 'low';
   beamFootprint.visible = low;
   illuminate(lightMeshes.drl, 0xd6f0ff, state.light === 'off' ? 0 : 1.8);
-  illuminate(lightMeshes.low, 0xe1f2ff, low ? 8.5 : 0);
+  illuminate(lightMeshes.low, 0xe1f2ff, low ? 17 : 0);
   illuminate(lightMeshes.rear, 0xff1628, state.rear ? 1.05 : 0);
   illuminate(lightMeshes.cabin, 0x7fb8e4, state.ambient ? .28 : 0);
   cabinFill.intensity = state.ambient ? 1.2 : 0;
-  for (const lamp of lights) lamp.intensity = low ? 185 : 0;
+  for (const lamp of lights) lamp.intensity = low ? 370 : 0;
   setSelected('[data-light]', 'light', state.light);
   setSelected('[data-signal]', 'signal', state.signal);
   $('#rearLight').classList.toggle('selected', state.rear);
@@ -508,12 +508,17 @@ function mountCockpitDisplay(car) {
 // The source combines both sides and, in some meshes, fixed body parts in one material.
 const sharedDoorTrim = [
   'Object_37', 'Object_157', 'Object_64', 'Object_76', 'Object_79', 'Object_204', 'Object_207',
-  'Object_223', 'Object_232', 'Object_1063', 'Object_1104', 'Object_1107', 'Object_1482'
+  'Object_223', 'Object_232', 'Object_291', 'Object_1063', 'Object_1104', 'Object_1107', 'Object_1482'
 ];
 
 function doorForIsland(name, { min, max }) {
   const x = (min.x + max.x) / 2;
   const z = (min.z + max.z) / 2;
+  // This cockpit mesh includes long decorative seam strips suspended beside
+  // the front seats. Keep the inboard stitching and exclude the loose strips.
+  if (name === 'Object_291') {
+    return Math.abs(x) > .58 && max.z - min.z > .36 ? null : 'fixed';
+  }
   // Rear glazing shares the mesh with the hatch-side backlight.
   if (name === 'Object_207' || name === 'Object_1107') {
     return max.z < -1.3 && min.z < -1.6 ? 'fixed' : x > 0 ? 'rl' : 'rr';
@@ -582,7 +587,9 @@ function attachDoorTrim(car) {
     }
     const groups = { fl: [], fr: [], rl: [], rr: [], fixed: [] };
     for (const { indices, bounds } of islands.values()) {
-      const output = groups[doorForIsland(name, bounds)];
+      const part = doorForIsland(name, bounds);
+      if (part === null) continue;
+      const output = groups[part];
       for (const vertex of indices) output.push(vertex);
     }
     for (const [part, indices] of Object.entries(groups)) {
@@ -718,9 +725,9 @@ function normalize(glb){if(carInner){carInner.removeFromParent();carInner=null}p
  }
  if (/brakedisc/.test(oname)) {
    const rotor = m.clone();
-   rotor.color.setHex(0x909296);
+   rotor.color.setHex(0x84868a);
    rotor.metalness = .66;
-   rotor.roughness = .68;
+   rotor.roughness = .72;
    applyRotorFinish(o, rotor);
    rotor.envMapIntensity = .66;
    return rotor;
@@ -744,7 +751,8 @@ function normalize(glb){if(carInner){carInner.removeFromParent();carInner=null}p
      finish.clearcoat = .08;
      finish.envMapIntensity = .48;
    } else {
-     finish.roughness = /gloss/.test(oname) ? .37 : .69;
+     finish.roughness = /gloss/.test(oname) ? .41 : .76;
+     if (/steeringstitch/.test(oname)) finish.specularIntensity = .28;
      finish.envMapIntensity = .46;
      finish.clearcoat = 0;
    }
@@ -752,9 +760,9 @@ function normalize(glb){if(carInner){carInner.removeFromParent();carInner=null}p
  }
  if (/glas_int_display_glass/.test(oname)) {
    const cover = m.clone();
-   cover.roughness = .27;
+   cover.roughness = .34;
    cover.metalness = 0;
-   cover.envMapIntensity = .32;
+   cover.envMapIntensity = .22;
    return cover;
  }
  if (/leathermaindash|leathermaininterior|interiorzone1|leatherthirddriverdoor/.test(oname)) {
@@ -777,6 +785,18 @@ function normalize(glb){if(carInner){carInner.removeFromParent();carInner=null}p
    liner.bumpMap = clothGrain;
    liner.bumpScale = .0013;
    return liner;
+ }
+ if (/plasticdoorsillpassdoorrear|blackplastic_doorsr|plasticdoorsillsall/.test(oname)) {
+   const seal = m.clone();
+   seal.color.setHex(0x24262a);
+   seal.metalness = 0;
+   seal.roughness = .88;
+   seal.clearcoat = 0;
+   seal.specularIntensity = .24;
+   seal.envMapIntensity = .28;
+   seal.bumpMap = rubberGrain;
+   seal.bumpScale = .0006;
+   return seal;
  }
  if (/chrome.*door|harmankardon.*door/.test(oname)) {
    const hardware = m.clone();
@@ -1201,8 +1221,8 @@ function animate(now) {
    desiredLook.copy(carRoot.localToWorld(cabinFocus));
  } else if (doorFocus) {
    const distance = state.zoom * Math.max(1, .93 / camera.aspect);
-   const side = doorFocus === 'rl' ? 1 : -1;
-   const doorZ = doorFocus === 'rl' ? -.82 : .45;
+   const side = doorFocus[1] === 'l' ? 1 : -1;
+   const doorZ = doorFocus[0] === 'r' ? -.82 : .45;
    desiredCam.copy(carRoot.localToWorld(cabinEye.set(side * (.68 + 3.6 * distance), .38 + .82 * distance, doorZ - 2.0 * distance)));
    desiredLook.copy(carRoot.localToWorld(cabinFocus.set(side * .63, .14, doorZ)));
  } else {
@@ -1225,12 +1245,12 @@ function animate(now) {
  for (const material of lightMeshes.drl) {
    const signal = state.signal === 'hazard' || state.signal === blinkSideMap.get(material);
    material.emissive.setHex(signal ? 0xff8418 : 0xd6f0ff);
-   material.emissiveIntensity = signal ? (flash ? 7.4 : 0) : (state.light === 'off' ? 0 : 1.8);
+   material.emissiveIntensity = signal ? (flash ? 14.8 : 0) : (state.light === 'off' ? 0 : 1.8);
  }
  for (const material of lightMeshes.blink) {
    const lit = flash && (state.signal === 'hazard' || state.signal === blinkSideMap.get(material));
    material.emissive.setHex(0xff8418);
-   material.emissiveIntensity = lit ? 8.5 : 0;
+   material.emissiveIntensity = lit ? 17 : 0;
  }
  const frameKey = [
    isLoaded, state.tab, state.color, state.finish, state.seat, state.wheel, state.spoiler,
