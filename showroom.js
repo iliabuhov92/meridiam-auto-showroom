@@ -12,7 +12,7 @@ const lookTarget=new THREE.Vector3(-.65,1.12,0),desiredCam=new THREE.Vector3(4.4
 // Luminous studio environment, broad reflection panels, not harsh point sources.
 const env=document.createElement('canvas');env.width=2048;env.height=1024;let c=env.getContext('2d');let gr=c.createLinearGradient(0,0,0,1024);gr.addColorStop(0,'#3b536a');gr.addColorStop(.42,'#192a3d');gr.addColorStop(.62,'#132334');gr.addColorStop(1,'#101924');c.fillStyle=gr;c.fillRect(0,0,2048,1024);
 function softbox(x,y,w,h,alpha){c.save();c.globalAlpha=alpha;c.shadowColor='#dbeeff';c.shadowBlur=52;let g=c.createLinearGradient(x,y,x+w,y);g.addColorStop(0,'#647c91');g.addColorStop(.12,'#d5e7f5');g.addColorStop(.5,'#ffffff');g.addColorStop(.9,'#d1e4f4');g.addColorStop(1,'#728ca3');c.fillStyle=g;c.fillRect(x,y,w,h);c.restore()}
-softbox(95,170,140,590,.95);softbox(440,145,420,130,.96);softbox(1090,145,150,570,.88);softbox(1460,180,410,140,.89);softbox(490,65,1060,36,.58);softbox(1950,280,50,380,.6);
+softbox(95,170,140,590,.95);softbox(440,145,420,130,.96);softbox(1090,145,150,570,.88);softbox(1460,180,410,140,.89);softbox(430,81,1200,71,.78);softbox(1950,280,50,380,.6);
 const environment=new THREE.CanvasTexture(env);environment.mapping=THREE.EquirectangularReflectionMapping;environment.colorSpace=THREE.SRGBColorSpace;
 const pmrem=new THREE.PMREMGenerator(renderer),envRT=pmrem.fromEquirectangular(environment);scene.environment=envRT.texture;scene.environmentIntensity=1.05;environment.dispose();pmrem.dispose();
 scene.add(new THREE.HemisphereLight(0xc9e5fd,0x151b25,.82));
@@ -120,6 +120,48 @@ beamContext.fillStyle = beamFalloff;
 beamContext.fillRect(0, 0, 256, 256);
 const beamMap = new THREE.CanvasTexture(beamTexture);
 beamMap.colorSpace = THREE.SRGBColorSpace;
+// Project the dipped beam into the existing room materials. World-space
+// projection keeps the cutoff aligned with the car as it rotates.
+const wallBeam = {
+  active: { value: 0 },
+  origin: { value: new THREE.Vector3() },
+  forward: { value: new THREE.Vector3() }
+};
+for (const material of [wallMat, glazing, graphite, recess, concrete]) {
+  material.onBeforeCompile = shader => {
+    Object.assign(shader.uniforms, {
+      wallBeamActive: wallBeam.active, wallBeamOrigin: wallBeam.origin,
+      wallBeamForward: wallBeam.forward
+    });
+    shader.vertexShader = 'varying vec3 roomPoint;\n' + shader.vertexShader.replace(
+      '#include <worldpos_vertex>',
+      '#include <worldpos_vertex>\nroomPoint = (modelMatrix * vec4(transformed, 1.0)).xyz;'
+    );
+    shader.fragmentShader = `varying vec3 roomPoint;
+      uniform float wallBeamActive;
+      uniform vec3 wallBeamOrigin, wallBeamForward;
+    ` + shader.fragmentShader.replace('#include <opaque_fragment>', `
+      if (wallBeamActive > 0.0) {
+        vec3 delta = roomPoint - wallBeamOrigin;
+        float ahead = dot(delta, wallBeamForward);
+        float sideways = dot(delta, vec3(wallBeamForward.z, 0.0, -wallBeamForward.x));
+        float spread = max(ahead, .1) * .29;
+        float l = (sideways - .78) / spread, r = (sideways + .78) / spread;
+        float left = exp(-l * l * 2.3), right = exp(-r * r * 2.3);
+        float cutoffHeight = -.014 * ahead + clamp(sideways * .035, 0.0, .13);
+        float cutoff = 1.0 - smoothstep(cutoffHeight, cutoffHeight + .075, delta.y);
+        float rise = smoothstep(-1.05, -.35, delta.y);
+        float distanceFade = 1.0 - smoothstep(7.0, 23.0, ahead);
+        outgoingLight += vec3(.40, .52, .68) * (left + right) * cutoff * rise *
+          distanceFade * smoothstep(2.1, 3.2, ahead);
+      }
+      #include <opaque_fragment>
+    `);
+  };
+}
+const wallBeamOriginLocal = new THREE.Vector3(0, -.055, 2.45);
+const wallBeamDirection = new THREE.Vector3(0, 0, 1);
+
 const beamGeometry = new THREE.PlaneGeometry(3.3, 5.1);
 for (const onPodium of [true, false]) {
   for (const x of [-1.12, 1.12]) {
@@ -268,7 +310,7 @@ function changeWheels(){
  // Both choices use the four original BMW rims. No new wheels float over the tyres.
  setSelected('[data-wheel]','wheel',state.wheel);
 }
-function changeSeat(){let col=state.seat==='cognac'?0x805137:state.seat==='cloth'?0x202b35:0x171b23;for(const m of seatMaterials){m.color.setHex(col);m.metalness=0;m.roughness=state.seat==='cloth'?.97:.71;m.clearcoat=state.seat==='cloth'?0:.13;m.bumpMap=state.seat==='cloth'?clothGrain:upholsteryGrain;m.bumpScale=state.seat==='cloth'?.0014:.0010;m.needsUpdate=true}setSelected('[data-seat]','seat',state.seat)}
+function changeSeat(){let col=state.seat==='cognac'?0x805137:state.seat==='cloth'?0x202b35:0x171b23;for(const m of seatMaterials){m.color.setHex(col);m.metalness=0;m.roughness=state.seat==='cloth'?.97:.71;m.clearcoat=state.seat==='cloth'?0:.13;m.bumpMap=state.seat==='cloth'?clothGrain:upholsteryGrain;m.roughnessMap=state.seat==='cloth'?null:leatherRoughness;m.bumpScale=state.seat==='cloth'?.0014:.0010;m.needsUpdate=true}setSelected('[data-seat]','seat',state.seat)}
 function changeSpoiler(){if(originalWing)originalWing.visible=state.spoiler==='low';if(wingHigh)wingHigh.visible=state.spoiler==='high';setSelected('[data-spoiler]','spoiler',state.spoiler)}
 function setSelected(query,attr,value){$$(query).forEach(b=>{const selected=b.dataset[attr]===value;b.classList.toggle('selected',selected);b.setAttribute('aria-pressed',String(selected))})}
 const openingRig = {fl:'MERIDIAM_RIG_DOOR_FRONT_LEFT',fr:'MERIDIAM_RIG_DOOR_FRONT_RIGHT',rl:'MERIDIAM_RIG_DOOR_REAR_LEFT',rr:'MERIDIAM_RIG_DOOR_REAR_RIGHT',trunk:'MERIDIAM_RIG_TRUNK_LID'};
@@ -312,6 +354,7 @@ function illuminate(materials, color, intensity) {
 function configureLights() {
   const low = state.light === 'low';
   beamFootprint.visible = low;
+  wallBeam.active.value = Number(low);
   illuminate(lightMeshes.drl, 0xd6f0ff, state.light === 'off' ? 0 : 1.8);
   illuminate(lightMeshes.low, 0xe1f2ff, low ? 17 : 0);
   illuminate(lightMeshes.rear, 0xff1628, state.rear ? 1.05 : 0);
@@ -535,6 +578,55 @@ function doorForIsland(name, { min, max }) {
   return (z < -.28 ? 'r' : 'f') + (x > 0 ? 'l' : 'r');
 }
 
+// Relax the original rounded trim surfaces without moving their mating edges.
+function refineRearCard(geometry, localToCar, point) {
+  const source = geometry.attributes.position;
+  const position = source.clone();
+  const vertices = new Map();
+  const byIndex = new Map();
+  const edges = new Map();
+  const indices = geometry.index.array;
+  const localStep = localToCar.getMaxScaleOnAxis();
+  for (const index of new Set(indices)) {
+    point.fromBufferAttribute(source, index);
+    const key = [point.x, point.y, point.z].map(value => Math.round(value * localStep * 1e5)).join(',');
+    if (!vertices.has(key)) {
+      vertices.set(key, { indices: [], point: point.clone(), neighbours: new Set(), boundary: false });
+    }
+    const vertex = vertices.get(key);
+    vertex.indices.push(index);
+    byIndex.set(index, vertex);
+  }
+  const ids = new Map([...vertices.values()].map((vertex, index) => [vertex, index]));
+  for (let i = 0; i < indices.length; i += 3) {
+    for (let side = 0; side < 3; side++) {
+      const a = byIndex.get(indices[i + side]);
+      const b = byIndex.get(indices[i + (side + 1) % 3]);
+      if (a === b) continue;
+      a.neighbours.add(b);
+      b.neighbours.add(a);
+      const low = Math.min(ids.get(a), ids.get(b));
+      const high = Math.max(ids.get(a), ids.get(b));
+      const key = low * vertices.size + high;
+      if (!edges.has(key)) edges.set(key, { a, b, count: 0 });
+      edges.get(key).count++;
+    }
+  }
+  for (const { a, b, count } of edges.values()) {
+    if (count !== 2) a.boundary = b.boundary = true;
+  }
+  const average = new THREE.Vector3();
+  for (const vertex of vertices.values()) {
+    if (vertex.boundary || vertex.neighbours.size < 3) continue;
+    average.set(0, 0, 0);
+    for (const neighbour of vertex.neighbours) average.add(neighbour.point);
+    average.divideScalar(vertex.neighbours.size).sub(vertex.point)
+      .multiplyScalar(.33).clampLength(0, .0025 / localStep).add(vertex.point);
+    for (const index of vertex.indices) position.setXYZ(index, average.x, average.y, average.z);
+  }
+  geometry.setAttribute('position', position);
+}
+
 function attachDoorTrim(car) {
   const point = new THREE.Vector3();
   carRoot.updateMatrixWorld(true);
@@ -597,8 +689,11 @@ function attachDoorTrim(car) {
       const piece = new THREE.BufferGeometry();
       for (const [attribute, data] of Object.entries(geometry.attributes)) piece.setAttribute(attribute, data);
       piece.setIndex(indices);
+      if ((part === 'rr' || part === 'rl') && (name === 'Object_79' || name === 'Object_232')) {
+        refineRearCard(piece, transform, point);
+      }
       piece.boundingBox = new THREE.Box3();
-      for (const index of indices) piece.boundingBox.expandByPoint(point.fromBufferAttribute(vertices, index));
+      for (const index of indices) piece.boundingBox.expandByPoint(point.fromBufferAttribute(piece.attributes.position, index));
       piece.boundingSphere = piece.boundingBox.getBoundingSphere(new THREE.Sphere());
       const trim = new THREE.Mesh(piece, mesh.material);
       trim.name = name + '_trim_' + part;
@@ -648,6 +743,10 @@ const clothGrain = surfaceGrain(6, (x, y, noise) => {
   const weft = Math.cos(y * Math.PI / 4);
   return 128 + 39 * Math.max(warp, weft) + 17 * warp * weft + 13 * noise;
 });
+const leatherRoughness = surfaceGrain(6, (x, y, noise) =>
+  228 + 15 * Math.sin(x * Math.PI / 16) * Math.sin(y * Math.PI / 16) + 16 * noise);
+const trimGrain = surfaceGrain(11, (x, y, noise) =>
+  128 + 16 * Math.sin(x * Math.PI / 4) * Math.sin(y * Math.PI / 4) + 29 * noise);
 const carbonGrain = surfaceGrain(6, (x, y, noise) => {
   const u = x * Math.PI / 4;
   const v = y * Math.PI / 4;
@@ -702,7 +801,7 @@ function normalize(glb){if(carInner){carInner.removeFromParent();carInner=null}p
  setMaterialOnce(o,m=>{let name=(m.name||'').toLowerCase(),oname=parentPath(o),kind=partFromName(oname+' '+name);
  if(name.includes('sapphire black')||(/paint_(hood|doors|trunk|fender|top|front|rear|bumper|fb|rb|gascap)/.test(oname)&&name.includes('paint'))){let clone=m.clone();clone.name='MERIDIAM_PAINT_'+o.name;clone.map=null;clone.bumpMap=paintGrain;clone.color.setHex(colors[state.color]);clone.metalness=.55;clone.roughness=.22;clone.clearcoat=1;clone.clearcoatRoughness=.12;clone.envMapIntensity=1.35;paints.push(clone);return clone}
  if(name.includes('meridiam | windshield')||name.includes('meridiam | side windows')||name.includes('meridiam | rear window')||name.includes('meridiam | interior glazing')){let clone=m.clone();clone.depthWrite=false;clone.transparent=true;clone.side=THREE.FrontSide;clone.opacity=name.includes('inner')?.04:.26;clone.color.setHex(0x19222b);clone.metalness=.2;clone.roughness=.16;clone.envMapIntensity=.34;glass.push(clone);o.castShadow=false;return clone}
- if(/meridiam.*(seat bolsters|seat inserts)|seat_leather|alkantaraseat|seat_koga|seat_alc|int_paint3/i.test(name+' '+oname)){let clone=m.clone();clone.name='MERIDIAM_SEAT_'+o.name;clone.color.setHex(0x242931);clone.metalness=0;clone.roughness=.75;clone.bumpMap=upholsteryGrain;clone.bumpScale=.0008;seatMaterials.push(clone);return clone}
+ if(/meridiam.*(seat bolsters|seat inserts)|seat_leather|alkantaraseat|seat_koga|seat_alc|seat0leat_re|perferasia|int_paint3/i.test(name+' '+oname)){let clone=m.clone();clone.name='MERIDIAM_SEAT_'+o.name;clone.color.setHex(0x242931);clone.metalness=0;clone.roughness=.75;clone.bumpMap=upholsteryGrain;clone.bumpScale=.0008;seatMaterials.push(clone);return clone}
  if(/g80_rim_|rim(_|[0-9])|rim_metal|rim_ring/.test(oname)&&!/brake|disc|tyre|tire|rim_badge|rim_m_badge|rim_logo|nipel|screws/i.test(oname)){let clone=m.clone();clone.name='MERIDIAM_RIM_'+o.name;clone.map=null;clone.metalness=.78;clone.roughness=.34;wheelMaterials.push(clone);return clone}
  if (name.includes('carbon seat backs') || /carbonroof|int_carbon/.test(oname)) {
    const carbon = m.clone();
@@ -747,6 +846,7 @@ function normalize(glb){if(carInner){carInner.removeFromParent();carInner=null}p
      finish.color.multiplyScalar(.25);
      finish.roughness = .66;
      finish.bumpMap = upholsteryGrain;
+     finish.roughnessMap = leatherRoughness;
      finish.bumpScale = .001;
      finish.clearcoat = .08;
      finish.envMapIntensity = .48;
@@ -773,10 +873,11 @@ function normalize(glb){if(carInner){carInner.removeFromParent();carInner=null}p
    leather.clearcoat = 0;
    leather.envMapIntensity = .36;
    leather.bumpMap = upholsteryGrain;
+   leather.roughnessMap = leatherRoughness;
    leather.bumpScale = .001;
    return leather;
  }
- if (/alcantaramainroof|plasticroofinterior|plastikking_seat/.test(oname)) {
+ if (/alcantaramainroof|plasticroofinterior/.test(oname)) {
    const liner = m.clone();
    liner.color.setHex(0x515155);
    liner.metalness = 0;
@@ -798,6 +899,16 @@ function normalize(glb){if(carInner){carInner.removeFromParent();carInner=null}p
    seal.bumpScale = .0006;
    return seal;
  }
+ if (/plastikking_seat|seat_plastic/.test(oname)) {
+   const backing = m.clone();
+   backing.color.setHex(0x323438);
+   backing.roughness = .76;
+   backing.metalness = 0;
+   backing.clearcoat = 0;
+   backing.bumpMap = trimGrain;
+   backing.bumpScale = .0004;
+   return backing;
+ }
  if (/chrome.*door|harmankardon.*door/.test(oname)) {
    const hardware = m.clone();
    const grille = /harmankardon/.test(oname);
@@ -816,7 +927,7 @@ function normalize(glb){if(carInner){carInner.removeFromParent();carInner=null}p
    trim.metalness = 0;
    trim.roughness = carpet ? .96 : .82;
    trim.envMapIntensity = .28;
-   trim.bumpMap = carpet ? clothGrain : upholsteryGrain;
+   trim.bumpMap = carpet ? clothGrain : trimGrain;
    trim.bumpScale = carpet ? .002 : .0007;
    return trim;
  }
@@ -934,13 +1045,13 @@ async function downloadPackedModel(prefix) {
     throw new Error('Некорректный список частей модели.');
   }
   const total = lengths.reduce((sum, length) => sum + length, 0);
-  const parts = [];
-  let downloaded = 0;
+  const parts = new Array(lengths.length);
+  const received = new Uint32Array(lengths.length);
   function report(bytes) {
     $('#progress').style.width = (bytes / total * 100) + '%';
     $('#status').textContent = 'Загрузка BMW: ' + (bytes / 1e6).toFixed(1) + ' из ' + (total / 1e6).toFixed(1) + ' МБ';
   }
-  for (const [index, length] of lengths.entries()) {
+  async function downloadPart(length, index) {
     const url = prefix + '-' + index + '.bin';
     for (let attempt = 0; attempt < 3; attempt++) {
       const controller = new AbortController();
@@ -966,20 +1077,27 @@ async function downloadPackedModel(prefix) {
           if (offset + value.length > length) throw new Error('Неверный размер части модели.');
           bytes.set(value, offset);
           offset += value.length;
-          report(downloaded + offset);
+          received[index] = offset;
+          report(received.reduce((sum, count) => sum + count, 0));
         }
         if (offset !== length) throw new Error('Часть модели скачалась не полностью.');
-        parts.push(bytes);
-        downloaded += length;
-        break;
+        parts[index] = bytes;
+        return;
       } catch (error) {
         controller.abort();
         if (attempt === 2) throw error;
-        report(downloaded);
+        received[index] = 0;
+        report(received.reduce((sum, count) => sum + count, 0));
       } finally {
         clearTimeout(idle);
       }
     }
+  }
+  for (let start = 0; start < lengths.length; start += 3) {
+    const batch = await Promise.allSettled(lengths.slice(start, start + 3)
+      .map((length, index) => downloadPart(length, start + index)));
+    const failure = batch.find(result => result.status === 'rejected');
+    if (failure) throw failure.reason;
   }
   $('#status').textContent = 'Распаковываем BMW…';
   const decoded = new Blob(parts).stream().pipeThrough(new DecompressionStream('gzip'));
@@ -1258,6 +1376,10 @@ function animate(now) {
  ].join('|');
  if (redraw || frameKey !== renderedKey || roomMoving || cameraMoving || studioMoving) {
    renderer.shadowMap.needsUpdate = redraw || roomMoving;
+   if (wallBeam.active.value) {
+     wallBeam.origin.value.copy(carRoot.localToWorld(cabinEye.copy(wallBeamOriginLocal)));
+     wallBeam.forward.value.copy(wallBeamDirection).applyQuaternion(carRoot.quaternion);
+   }
    renderer.render(scene,camera);
    updateSpots();
    renderedKey = frameKey;
