@@ -46,16 +46,20 @@ const reflectionShader = {
   fragmentShader: Reflector.ReflectorShader.fragmentShader.replace(
     'vec4 base = texture2DProj( tDiffuse, vUv );',
     `vec2 uv = vUv.xy / vUv.w;
-     vec3 reflected = texture2D(tDiffuse, uv).rgb * .36;
-     reflected += texture2D(tDiffuse, uv + vec2(.006, .003)).rgb * .16;
-     reflected += texture2D(tDiffuse, uv - vec2(.006, .003)).rgb * .16;
-     reflected += texture2D(tDiffuse, uv + vec2(.002, -.009)).rgb * .16;
-     reflected += texture2D(tDiffuse, uv - vec2(.002, -.009)).rgb * .16;
+     vec3 reflected = vec3(0.0);
+     for (int y = -1; y <= 1; y++) {
+       for (int x = -1; x <= 1; x++) {
+         vec2 tap = vec2(float(x), float(y));
+         float weight = (2.0 - abs(tap.x)) * (2.0 - abs(tap.y));
+         reflected += texture2D(tDiffuse, clamp(uv + tap * vec2(.0038, .006), .001, .999)).rgb * weight;
+       }
+     }
+     reflected *= .0625;
      vec4 base = vec4(reflected, 1.0);`
-  ).replace('vec4( blendOverlay( base.rgb, color ), 1.0 )', 'vec4(base.rgb, .25)')
+  ).replace('vec4( blendOverlay( base.rgb, color ), 1.0 )', 'vec4(base.rgb, .21)')
 };
 const floorReflection = new Reflector(new THREE.PlaneGeometry(44, 44), {
-  textureWidth: innerWidth < 681 ? 320 : 640, textureHeight: innerWidth < 681 ? 180 : 360,
+  textureWidth: innerWidth < 681 ? 480 : 1024, textureHeight: innerWidth < 681 ? 300 : 640,
   multisample: 0, shader: reflectionShader
 });
 floorReflection.rotation.x = -Math.PI / 2;
@@ -75,6 +79,7 @@ deck.receiveShadow = true;
 podium.add(deck);
 
 const whiteLight = new THREE.MeshBasicMaterial({ color: 0xe5f4ff });
+const ceilingLight = new THREE.MeshBasicMaterial({ color: 0xe2effe, toneMapped: false });
 const galleryLight = new THREE.MeshBasicMaterial({ color: 0xa78e6e });
 const ring = new THREE.Mesh(new THREE.TorusGeometry(podiumRadius, .012, 8, 160), whiteLight);
 ring.rotation.x = -Math.PI / 2;
@@ -134,11 +139,11 @@ for (const z of [-9.65, -11.5, -13.6, -15.05]) {
 }
 architecturalBox([11, .032, .08], [5.6, .085, -13.2], whiteLight);
 
-const arc = new THREE.Mesh(new THREE.RingGeometry(7.59, 7.83, 150, 1, Math.PI - .045, Math.PI + .09), whiteLight);
+const arc = new THREE.Mesh(new THREE.RingGeometry(7.59, 7.83, 150, 1, Math.PI - .045, Math.PI + .09), ceilingLight);
 arc.rotation.x = Math.PI / 2;
 arc.position.set(.2, 3.60, 1.30);
 scene.add(arc);
-const arcEdge = new THREE.Mesh(new THREE.TorusGeometry(7.70, .045, 8, 150, Math.PI), whiteLight);
+const arcEdge = new THREE.Mesh(new THREE.TorusGeometry(7.70, .045, 8, 150, Math.PI), ceilingLight);
 arcEdge.rotation.x = -Math.PI / 2;
 arcEdge.position.copy(arc.position);
 arcEdge.position.y -= .018;
@@ -197,13 +202,13 @@ function updateStudioLighting(dt) {
   const next = THREE.MathUtils.damp(studioDim, target, 7, dt);
   studioDim = Math.abs(next - target) < .002 ? target : next;
   for (const { light, intensity } of studioLights) {
-    light.intensity = intensity * (1 - studioDim * (light === rimLight ? .57 : .78));
+    light.intensity = intensity * (1 - studioDim * (light === rimLight ? .27 : .49));
   }
   for (const { material, color } of roomSurfaces) {
-    material.color.copy(color).multiplyScalar(1 - studioDim * .71);
+    material.color.copy(color).multiplyScalar(1 - studioDim * (material === ceilingLight ? .19 : .37));
   }
-  scene.environmentIntensity = 1.05 - studioDim * .43;
-  scene.background.setHex(0x090e16).multiplyScalar(1 - studioDim * .83);
+  scene.environmentIntensity = 1.05 - studioDim * .27;
+  scene.background.setHex(0x090e16).multiplyScalar(1 - studioDim * .46);
   scene.fog.color.copy(scene.background);
   return true;
 }
