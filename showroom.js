@@ -1,8 +1,20 @@
+import {Reflector} from 'three/addons/objects/Reflector.js';
 import * as THREE from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {RectAreaLightUniformsLib} from 'three/addons/lights/RectAreaLightUniformsLib.js';
 const $=s=>document.querySelector(s), $$=s=>[...document.querySelectorAll(s)];
 const stage=$('#stage'),toast=$('#toast');let toastTimer;
+const compactConfig = document.createElement('style');
+compactConfig.textContent = `
+  #config:has(#config-body:not([hidden])) h2 { margin-bottom: 9px; padding-bottom: 9px; }
+  #config-body .section-label { margin: 9px 0 5px; }
+  #config-body .choice { gap: 4px; }
+  @media (min-width: 901px) {
+    #config-body .choice button { min-height: 28px; min-width: 60px; padding: 5px 6px; font-size: 11px; }
+    #config:has(#config-body:not([hidden])) { background: #101a27da; width: 246px; padding: 13px; }
+  }
+`;
+document.head.append(compactConfig);
 function say(t){toast.textContent=t;toast.classList.add('show');clearTimeout(toastTimer);toastTimer=setTimeout(()=>toast.classList.remove('show'),2400)}
 const scene=new THREE.Scene();scene.background=new THREE.Color(0x090e16);scene.fog=new THREE.FogExp2(0x090e16,.028);
 const reducedMotion=matchMedia('(prefers-reduced-motion: reduce)');
@@ -10,9 +22,9 @@ const renderer=new THREE.WebGLRenderer({antialias:true,alpha:false,powerPreferen
 const camera=new THREE.PerspectiveCamera(34,innerWidth/innerHeight,.035,150);camera.position.set(4.30,2.85,8.45);
 const lookTarget=new THREE.Vector3(-.65,1.12,0),desiredCam=new THREE.Vector3(4.45,2.65,7.55),desiredLook=new THREE.Vector3(-.65,1.12,0);
 // Luminous studio environment, broad reflection panels, not harsh point sources.
-const env=document.createElement('canvas');env.width=2048;env.height=1024;let c=env.getContext('2d');let gr=c.createLinearGradient(0,0,0,1024);gr.addColorStop(0,'#3b536a');gr.addColorStop(.42,'#192a3d');gr.addColorStop(.62,'#132334');gr.addColorStop(1,'#101924');c.fillStyle=gr;c.fillRect(0,0,2048,1024);
+const env=document.createElement('canvas');env.width=2048;env.height=1024;let c=env.getContext('2d');let gr=c.createLinearGradient(0,0,0,1024);gr.addColorStop(0,'#323b47');gr.addColorStop(.42,'#192a3d');gr.addColorStop(.62,'#132334');gr.addColorStop(1,'#101924');c.fillStyle=gr;c.fillRect(0,0,2048,1024);
 function softbox(x,y,w,h,alpha){c.save();c.globalAlpha=alpha;c.shadowColor='#dbeeff';c.shadowBlur=52;let g=c.createLinearGradient(x,y,x+w,y);g.addColorStop(0,'#647c91');g.addColorStop(.12,'#d5e7f5');g.addColorStop(.5,'#ffffff');g.addColorStop(.9,'#d1e4f4');g.addColorStop(1,'#728ca3');c.fillStyle=g;c.fillRect(x,y,w,h);c.restore()}
-softbox(95,170,140,590,.95);softbox(440,145,420,130,.96);softbox(1090,145,150,570,.88);softbox(1460,180,410,140,.89);softbox(490,65,1060,36,.58);softbox(1950,280,50,380,.6);
+softbox(95,170,140,590,.95);softbox(440,145,420,130,.96);softbox(1090,145,150,570,.88);softbox(1460,180,410,140,.89);softbox(360,106,1280,64,.92);softbox(1950,280,50,380,.6);
 const environment=new THREE.CanvasTexture(env);environment.mapping=THREE.EquirectangularReflectionMapping;environment.colorSpace=THREE.SRGBColorSpace;
 const pmrem=new THREE.PMREMGenerator(renderer),envRT=pmrem.fromEquirectangular(environment);scene.environment=envRT.texture;scene.environmentIntensity=1.05;environment.dispose();pmrem.dispose();
 scene.add(new THREE.HemisphereLight(0xc9e5fd,0x151b25,.82));
@@ -20,45 +32,139 @@ RectAreaLightUniformsLib.init();function area(x,y,z,w,h,intensity,color){let l=n
 const key=new THREE.DirectionalLight(0xe6f3ff,1.3);key.position.set(-5.3,9,6);key.castShadow=true;key.shadow.mapSize.set(1024,1024);key.shadow.camera.left=-9;key.shadow.camera.right=9;key.shadow.camera.top=9;key.shadow.camera.bottom=-9;key.shadow.bias=-.0003;scene.add(key);
 const rimLight=new THREE.DirectionalLight(0xb2dbff,1.25);rimLight.position.set(5,6,-4);scene.add(rimLight);
 const mat=(hex,metalness=0,roughness=.5)=>new THREE.MeshStandardMaterial({color:hex,metalness,roughness});
-const floor=new THREE.Mesh(new THREE.PlaneGeometry(90,90),mat(0x141b24,.41,.37));floor.rotation.x=-Math.PI/2;floor.position.y=-.055;floor.receiveShadow=true;scene.add(floor);
-const podium=new THREE.Group();podium.position.x=-.70;scene.add(podium);const base=new THREE.Mesh(new THREE.CylinderGeometry(3.67,3.7,.25,128),mat(0x0b131d,.52,.3));base.position.y=.06;base.receiveShadow=true;podium.add(base);const upper=new THREE.Mesh(new THREE.CylinderGeometry(3.66,3.66,.012,128),mat(0x121923,.42,.38));upper.position.y=.192;upper.receiveShadow=true;podium.add(upper);const ring=new THREE.Mesh(new THREE.TorusGeometry(3.665,.016,10,160),new THREE.MeshBasicMaterial({color:0xa2dbff}));ring.rotation.x=-Math.PI/2;ring.position.y=.204;podium.add(ring);const ringHalo=new THREE.Mesh(new THREE.TorusGeometry(3.69,.032,6,160),new THREE.MeshBasicMaterial({color:0x244a67,transparent:true,opacity:.4}));ringHalo.rotation.x=-Math.PI/2;ringHalo.position.y=.192;podium.add(ringHalo);
-const wallMat=mat(0x171b23,.44,.56);function wall(x,y,z,w,h,ry){let mesh=new THREE.Mesh(new THREE.PlaneGeometry(w,h),wallMat);mesh.position.set(x,y,z);mesh.rotation.y=ry;scene.add(mesh)}wall(0,4,-13,29,9,0);wall(-13.8,4,0,25,9,Math.PI/2);wall(13.8,4,0,25,9,-Math.PI/2);
-for(let x=-12;x<=12;x+=3.4){let p=new THREE.Mesh(new THREE.BoxGeometry(.075,8,.1),mat(0x30475b,.55,.4));p.position.set(x,4,-12.86);scene.add(p);let line=new THREE.Mesh(new THREE.BoxGeometry(.026,6.9,.055),new THREE.MeshBasicMaterial({color:0x397298}));line.position.set(x+.12,4,-12.78);scene.add(line)}
-const ceilingLine=new THREE.Mesh(new THREE.TorusGeometry(10.3,.035,7,180,Math.PI),new THREE.MeshBasicMaterial({color:0xc2e5ff}));ceilingLine.rotation.set(Math.PI/2,0,-.1);ceilingLine.position.set(0,4.8,-4.8);scene.add(ceilingLine);
-// Recessed panes, brushed mullions and indirect lighting give the room a second depth plane.
-const graphite = mat(0x10151c, .66, .37);
-const glazing = mat(0x1d2c37, .58, .29);
-const whiteLight = new THREE.MeshBasicMaterial({ color: 0xb8ddff });
-const galleryLight = new THREE.MeshBasicMaterial({ color: 0xab8b64 });
+const floorY = -.055;
+const podiumY = .016;
+const podiumRadius = 3.10;
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(90, 90), mat(0x1b2330, .46, .32));
+floor.rotation.x = -Math.PI / 2;
+floor.position.y = floorY;
+floor.receiveShadow = true;
+scene.add(floor);
 
+const reflectionShader = {
+  ...Reflector.ReflectorShader,
+  fragmentShader: Reflector.ReflectorShader.fragmentShader.replace(
+    'vec4 base = texture2DProj( tDiffuse, vUv );',
+    `vec2 uv = vUv.xy / vUv.w;
+     vec3 reflected = texture2D(tDiffuse, uv).rgb * .36;
+     reflected += texture2D(tDiffuse, uv + vec2(.006, .003)).rgb * .16;
+     reflected += texture2D(tDiffuse, uv - vec2(.006, .003)).rgb * .16;
+     reflected += texture2D(tDiffuse, uv + vec2(.002, -.009)).rgb * .16;
+     reflected += texture2D(tDiffuse, uv - vec2(.002, -.009)).rgb * .16;
+     vec4 base = vec4(reflected, 1.0);`
+  ).replace('vec4( blendOverlay( base.rgb, color ), 1.0 )', 'vec4(base.rgb, .25)')
+};
+const floorReflection = new Reflector(new THREE.PlaneGeometry(44, 44), {
+  textureWidth: innerWidth < 681 ? 320 : 640, textureHeight: innerWidth < 681 ? 180 : 360,
+  multisample: 0, shader: reflectionShader
+});
+floorReflection.rotation.x = -Math.PI / 2;
+floorReflection.position.y = podiumY + .001;
+floorReflection.material.transparent = true;
+floorReflection.material.depthWrite = false;
+floorReflection.renderOrder = 0;
+scene.add(floorReflection);
+
+const podium = new THREE.Group();
+podium.position.x = -.70;
+scene.add(podium);
+const deck = new THREE.Mesh(new THREE.CylinderGeometry(podiumRadius, podiumRadius + .018, .068, 128),
+  mat(0x111925, .58, .30));
+deck.position.y = podiumY - .034;
+deck.receiveShadow = true;
+podium.add(deck);
+
+const whiteLight = new THREE.MeshBasicMaterial({ color: 0xe5f4ff });
+const galleryLight = new THREE.MeshBasicMaterial({ color: 0xa78e6e });
+const ring = new THREE.Mesh(new THREE.TorusGeometry(podiumRadius, .012, 8, 160), whiteLight);
+ring.rotation.x = -Math.PI / 2;
+ring.position.y = podiumY + .009;
+podium.add(ring);
+
+// Feather the cold spill on the deck and adjoining floor without a full-screen blur.
+for (const [inner, outer, y, opacity] of [
+  [podiumRadius - .16, podiumRadius, podiumY + .003, .36],
+  [podiumRadius, podiumRadius + .28, floorY + .003, .32]
+]) {
+  const glow = new THREE.Mesh(new THREE.RingGeometry(inner, outer, 128), new THREE.ShaderMaterial({
+    uniforms: { radius: { value: podiumRadius }, width: { value: outer - inner }, opacity: { value: opacity } },
+    vertexShader: `varying vec2 point; void main(){
+      point = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+    }`,
+    fragmentShader: `varying vec2 point; uniform float radius, width, opacity; void main(){
+      float intensity = 1.0 - smoothstep(0.0, width, abs(length(point) - radius));
+      gl_FragColor = vec4(.22,.57,1.0,opacity * intensity * intensity);
+    }`,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
+  }));
+  glow.rotation.x = -Math.PI / 2;
+  glow.position.y = y;
+  glow.renderOrder = 1;
+  podium.add(glow);
+}
+
+const graphite = mat(0x161d25, .56, .46);
+const wallMat = mat(0x212b36, .30, .52);
+const rearWall = mat(0x263140, .26, .62);
+const glazing = new THREE.MeshPhysicalMaterial({
+  color: 0x7194ad, metalness: .2, roughness: .17,
+  transparent: true, opacity: .19, depthWrite: false
+});
 function architecturalBox(size, position, material) {
   const mesh = new THREE.Mesh(new THREE.BoxGeometry(...size), material);
   mesh.position.set(...position);
   scene.add(mesh);
   return mesh;
 }
+// The left wall anchors the car. The right-hand glass wall opens onto a gallery.
+architecturalBox([11.2, 5.4, .25], [-9.9, 2.65, -8.9], wallMat);
+architecturalBox([20, 6.5, .22], [.6, 3.2, -15.5], rearWall);
+architecturalBox([.22, 6, 24], [-11.4, 2.9, -3], wallMat);
+architecturalBox([.22, 6, 24], [11.4, 2.9, -3], wallMat);
+architecturalBox([11, .035, .05], [-9.9, 3.22, -8.75], whiteLight);
+architecturalBox([11, .043, .09], [-9.9, .085, -8.75], whiteLight);
+for (let x = -4.25; x < 10.9; x += 2.15) {
+  architecturalBox([.11, 5.1, .24], [x, 2.5, -8.8], graphite);
+  architecturalBox([2.06, 5.0, .035], [x + 1.075, 2.5, -8.8], glazing);
+  architecturalBox([.052, 3.15, .055], [x + .13, 1.58, -13.5], whiteLight);
+  architecturalBox([1.75, .34, .66], [x + .98, .17, -13.65], graphite);
+}
+for (const z of [-9.65, -11.5, -13.6, -15.05]) {
+  architecturalBox([14.9, .04, .11], [3.1, 4.27, z], galleryLight);
+}
+architecturalBox([11, .032, .08], [5.6, .085, -13.2], whiteLight);
 
-for (let x = -10; x <= 9; x += 2.5) {
-  architecturalBox([2.37, 5.2, .07], [x, 2.6, -12.55], glazing);
-  architecturalBox([.10, 5.6, .21], [x + 1.23, 2.8, -12.36], graphite);
-}
-architecturalBox([27, .08, .18], [0, .11, -12.2], whiteLight);
-architecturalBox([27, .037, .12], [0, 4.7, -12.2], whiteLight);
-architecturalBox([.10, .038, 21], [-13.65, 4.7, -2.2], whiteLight);
-// Side bays create a readable foreground and background during the exterior orbit.
-const concrete = mat(0x202731, .22, .69);
-const recess = mat(0x131c25, .36, .43);
-for (const side of [-1, 1]) {
-  for (let z = -10; z <= 8; z += 4.5) {
-    architecturalBox([.18, 3.85, 4.18], [side * 13.62, 1.96, z], recess);
-    architecturalBox([.46, 5.2, .23], [side * 13.43, 2.6, z - 2.2], concrete);
-    architecturalBox([.065, .042, 3.95], [side * 13.49, .18, z], galleryLight);
-  }
-}
+const arc = new THREE.Mesh(new THREE.RingGeometry(7.59, 7.83, 150, 1, Math.PI - .045, Math.PI + .09), whiteLight);
+arc.rotation.x = Math.PI / 2;
+arc.position.set(.2, 3.60, 1.30);
+scene.add(arc);
+const arcEdge = new THREE.Mesh(new THREE.TorusGeometry(7.70, .045, 8, 150, Math.PI), whiteLight);
+arcEdge.rotation.x = -Math.PI / 2;
+arcEdge.position.copy(arc.position);
+arcEdge.position.y -= .018;
+scene.add(arcEdge);
+const arcHousing = new THREE.Mesh(new THREE.RingGeometry(7.50, 7.96, 150, 1, Math.PI - .045, Math.PI + .09), graphite);
+arcHousing.rotation.x = Math.PI / 2;
+arcHousing.position.copy(arc.position);
+arcHousing.position.y += .027;
+scene.add(arcHousing);
 
-for (let z = -11.5; z < -5; z += 1.9) {
-  architecturalBox([5.5, .018, .06], [6.5, 4.27, z], galleryLight);
-}
+const badgeCanvas = document.createElement('canvas');
+badgeCanvas.width = 512;
+badgeCanvas.height = 256;
+const badge = badgeCanvas.getContext('2d');
+badge.fillStyle = '#397ac2'; badge.fillRect(27, 76, 26, 87);
+badge.fillStyle = '#244f9a'; badge.fillRect(58, 76, 26, 87);
+badge.fillStyle = '#d65361'; badge.fillRect(89, 76, 26, 87);
+badge.font = 'italic 800 126px system-ui';
+badge.fillStyle = '#ebf5ff'; badge.fillText('M3', 125, 165);
+badge.font = '600 28px system-ui'; badge.fillText('COMPETITION G80', 30, 215);
+const badgeTexture = new THREE.CanvasTexture(badgeCanvas);
+badgeTexture.colorSpace = THREE.SRGBColorSpace;
+const wallBadge = new THREE.Mesh(new THREE.PlaneGeometry(2.25, 1.125),
+  new THREE.MeshBasicMaterial({ map: badgeTexture, transparent: true, depthWrite: false }));
+wallBadge.position.set(-9.70, 2.12, -8.75);
+scene.add(wallBadge);
 
 // Keep a soft contact shadow beneath all four tyres, even in low-power graphics modes.
 const shadowCanvas = document.createElement('canvas');
@@ -76,7 +182,7 @@ const contactShadow = new THREE.Mesh(
   new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(shadowCanvas), transparent: true, depthWrite: false })
 );
 contactShadow.rotation.x = -Math.PI / 2;
-contactShadow.position.y = .202;
+contactShadow.position.y = podiumY + .005;
 podium.add(contactShadow);
 // Dim the exhibition independently of vehicle lights and UI.
 const studioLights = scene.children.filter(node => node.isLight)
@@ -142,7 +248,7 @@ for (const onPodium of [true, false]) {
         varying vec2 coords;
         varying vec2 floorPoint;
         void main() {
-          bool inside = length(floorPoint) < 3.66;
+          bool inside = length(floorPoint) < ${podiumRadius};
           if (inside != onPodium) discard;
           vec4 glow = texture2D(footprint, coords);
           float cutoff = smoothstep(.07, .13, coords.y) * (1.0 - smoothstep(.80, .86, coords.y + abs(coords.x - .5) * .30));
@@ -153,7 +259,7 @@ for (const onPodium of [true, false]) {
       blending: THREE.AdditiveBlending
     });
     const patch = new THREE.Mesh(beamGeometry, material);
-    patch.position.set(x, onPodium ? .201 : -.052, 5.1);
+    patch.position.set(x, onPodium ? podiumY + .004 : floorY + .004, 5.1);
     patch.rotation.x = -Math.PI / 2;
     beamFootprint.add(patch);
   }
@@ -174,7 +280,7 @@ function partFromName(name) {
   return null;
 }
 function setMaterialOnce(mesh,handler){if(Array.isArray(mesh.material)){mesh.material=mesh.material.map(m=>handler(m))}else mesh.material=handler(mesh.material)}
-function changeColor(){const hex=colors[state.color];for(const m of paints){m.color.setHex(hex);m.metalness=state.finish==='matte'?.18:.42;m.roughness=state.finish==='matte'?.64:.26;m.clearcoat=state.finish==='matte'?0:1;m.clearcoatRoughness=.075;m.bumpScale=state.finish==='matte'?.00038:.00010;m.envMapIntensity=state.finish==='matte'?.7:1.13;m.needsUpdate=true}setSelected('[data-color]','color',state.color);setSelected('[data-finish]','finish',state.finish)}
+function changeColor(){const hex=colors[state.color];for(const m of paints){m.color.setHex(hex);m.metalness=state.finish==='matte'?.18:.42;m.roughness=state.finish==='matte'?.64:.26;m.clearcoat=state.finish==='matte'?0:1;m.clearcoatRoughness=.063;m.bumpScale=state.finish==='matte'?.00038:.00010;m.envMapIntensity=state.finish==='matte'?.7:1.13;m.needsUpdate=true}setSelected('[data-color]','color',state.color);setSelected('[data-finish]','finish',state.finish)}
 const wheelFaces = [];
 let wheelDesign = 'factory';
 
@@ -692,7 +798,7 @@ function applyRotorFinish(mesh, material) {
 
 function normalize(glb){if(carInner){carInner.removeFromParent();carInner=null}paints.length=0;glass.length=0;seatMaterials.length=0;wheelMaterials.length=0;originalWing=null;wingHigh=null;Object.values(lightMeshes).forEach(a=>a.length=0);Object.keys(pivots).forEach(k=>delete pivots[k]);
  const car=glb.scene;car.updateMatrixWorld(true);const b=new THREE.Box3().setFromObject(car),size=b.getSize(new THREE.Vector3());carCenter=b.getCenter(new THREE.Vector3());carScale=5.45/Math.max(size.x,size.z);if(!Number.isFinite(carScale)||carScale<.0001)throw Error('Некорректный масштаб BMW');
- car.position.sub(carCenter);carInner=new THREE.Group();carInner.scale.setScalar(carScale);carInner.add(car);carRoot.add(carInner);carRoot.position.y=.204+size.y*carScale/2;
+ car.position.sub(carCenter);carInner=new THREE.Group();carInner.scale.setScalar(carScale);carInner.add(car);carRoot.add(carInner);carRoot.position.y=podiumY+.005+size.y*carScale/2;
  const uniq={paint:new Set(),seats:new Set(),wheels:new Set(),glass:new Set()};let nodes=0;
  const parentPath=(obj)=>{let result=[],p=obj;for(let i=0;p&&i<9;i++,p=p.parent)result.push(p.name||'');return result.join(' ').toLowerCase()};
  car.traverse(o=>{nodes++;if(o.name.startsWith('MERIDIAM_RIG_')&&!o.name.endsWith('COUNTER_OFFSET'))pivots[o.name]=o;
@@ -1260,6 +1366,7 @@ function animate(now) {
  ].join('|');
  if (redraw || frameKey !== renderedKey || roomMoving || cameraMoving || studioMoving) {
    renderer.shadowMap.needsUpdate = redraw || roomMoving;
+   floorReflection.visible = !state.interior;
    renderer.render(scene,camera);
    updateSpots();
    renderedKey = frameKey;
